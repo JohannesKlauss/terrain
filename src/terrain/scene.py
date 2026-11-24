@@ -10,7 +10,7 @@ import numpy as np
 import trimesh
 
 from terrain.library import load_catalog, read_json, sha256, source_path, write_json
-from terrain.visual import preview_source, render_source
+from terrain.visual import CAMERAS, preview_source, render_source
 
 
 def init_scene(path, catalog, name, brief):
@@ -147,7 +147,9 @@ def resolve_placements(path):
     return scene, catalog, resolved
 
 
-def assemble_scene(path, output_dir, preview=False, openscad="openscad"):
+def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=("iso", "top")):
+    if not views or any(view not in CAMERAS for view in views):
+        raise ValueError(f"Unknown scene preview views: {views}")
     scene, catalog, resolved = resolve_placements(path)
     output_dir = Path(output_dir).resolve()
     inputs = {
@@ -163,8 +165,7 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad"):
             "report.json",
             "print-list.csv",
             "assembly.md",
-            "iso.png",
-            "top.png",
+            *(f"{view}.png" for view in views),
         )
     }
     if inputs & outputs or output_dir.is_relative_to(Path(catalog["root"]).resolve()):
@@ -186,7 +187,11 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad"):
     print_list = []
     for asset_id, count in counts.items():
         asset = unique[asset_id]
-        printed = asset["printed"]
+        printed = (
+            scene.get("iteration", {}).get("printed_inventory", {}).get(asset_id, asset["printed"])
+        )
+        if printed is not None and (type(printed) is not int or printed < 0):
+            raise ValueError(f"Invalid printed inventory: {asset_id}")
         print_list.append(
             {
                 "asset": asset_id,
@@ -217,7 +222,7 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad"):
     ]
     previews = []
     if preview:
-        for view in ("iso", "top"):
+        for view in views:
             destination = output_dir / f"{view}.png"
             render_source(source, destination, view, openscad, size=(1600, 1200))
             previews.append(destination)
@@ -228,6 +233,8 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad"):
             "name": scene["name"],
             "brief": scene["brief"],
             "art_direction": scene.get("art_direction", {}),
+            "encounter": scene.get("encounter", {}),
+            "iteration": scene.get("iteration", {}),
             "placements": [
                 {**placement, "world_aabb_mm": bounds.tolist()}
                 for placement, _, _, bounds in resolved

@@ -4,6 +4,94 @@ Library-first, agent-driven tabletop scene design for 28–32 mm miniatures. Bro
 
 **Status: software prototype, not print-approved.** Library measurements and assembly previews do not certify connector fit, miniature clearance, stability, or printability. Slicer review and physical tests remain mandatory.
 
+## Design an encounter together
+
+Use the **terrain-workshop** skill for a discussion-driven workflow:
+
+> Use terrain-workshop. Help me design a battlefield for my next pen-and-paper session.
+> Interview me in short rounds about the place, antagonist, their character and tactics,
+> the party, and what should happen here. Turn those answers into terrain and show me
+> drafts early. Let me inspect them in interactive 3D, then refine the layout from my
+> feedback. Keep a printing list for each iteration.
+
+The loop is **discuss → research the library → plan → build a draft → inspect → discuss**.
+The agent asks focused questions instead of giving you an intake form. It connects
+fiction to player choices: a villain's retreat route, an interruptible ritual, a
+dangerous approach, a useful flank, or a room repurposed by its occupants. It drafts
+freely, then pauses for your visual feedback. Unconfirmed ideas stay labelled as
+assumptions, not decisions.
+
+Each workshop has an editable scene and a design journal. Each checkpoint saves a new
+source snapshot, the feedback that prompted it, and its change summary. The local review
+page lets you browse revisions, **orbit/pan/zoom actual library geometry**, use isometric,
+reverse, top and front cameras, and hide pieces to inspect interiors. Four mesh PNGs
+remain available if WebGL 2 is unavailable. The 50 mm viewer grid is a reference ruler,
+not an inferred asset module or game grid.
+
+The agent runs these commands on your behalf, after indexing the library:
+
+```bash
+uv run terrain workshop init scenes/my-encounter \
+  --name "The pressure chapel" --brief "A ritual inside a failing industrial shrine"
+
+# The agent records the discussion in design.md and scene.json, inspects library
+# candidates, then adds/moves intact pieces in scenes/my-encounter/scene.json.
+
+uv run terrain workshop checkpoint scenes/my-encounter \
+  --title "The first approach" --changes "Offset the control point and open the foreground"
+
+# After your feedback and the agent's layout changes:
+uv run terrain workshop checkpoint scenes/my-encounter \
+  --title "A safer flank" --feedback "The approach feels too exposed" \
+  --changes "Move side cover to interrupt the approach sight line"
+```
+
+Open `build/workshops/my-encounter/index.html` directly in your browser. No server, CDN,
+API key, external model upload, or browser network request is needed. The review embeds
+private geometry, so **do not publish or share its files**.
+
+The review page is not a second chat client. Discuss changes with the agent in your
+normal conversation, using camera angles and piece IDs. You can also download feedback
+notes from the page and supply them to the agent. Browser notes are not sent automatically.
+Hiding pieces changes the view only, not the layout or printing quantities.
+
+### Printing list and saved iterations
+
+Every revision includes a visible printing table and `print-list.csv`: original source
+path, required copies, recorded printed stock, remaining copies, and license. Unknown
+inventory remains **unknown**, not zero. Missing hero sculpts or other unbuilt pieces stay
+in the art direction, not in the printable inventory. Print the unchanged original files,
+not geometry extracted from the viewer.
+
+```text
+scenes/my-encounter/
+  scene.json              # Working layout, art direction, structured encounter brief
+  design.md               # Decisions, assumptions, open questions, feedback, next step
+  revisions/0001.json     # Saved source, feedback, change summary, journal snapshot
+  revisions/0002.json
+build/workshops/my-encounter/
+  index.html              # Revision browser
+  0001/review.html         # Interactive 3D, printing table, angles and encounter notes
+  0001/print-list.csv
+  0001/report.json         # Provenance, conservative bounds, overlaps, pending gates
+  0001/assembly.md
+  0001/iso.png             # Also reverse.png, top.png, front.png
+```
+
+Source snapshots contain references, not purchased meshes, and can be version-controlled.
+Previews stay under Git-ignored `build/`. Failed rendering does not save a new revision.
+To rebuild missing previews from saved revisions or reopen the revision browser:
+
+```bash
+uv run terrain workshop review scenes/my-encounter
+```
+
+Existing complete, matching artifact directories are reused. For a full fresh rendering,
+pass `--output-dir build/workshops/my-encounter-rebuilt`. Outputs owned by another workshop
+or incomplete/edited revision folders are not overwritten. Source files and their indexed
+hashes must still match. Review pages are inspection artifacts, not collision/clearance
+proof, print-ready combined models, or slicer approval.
+
 ## Start with your library
 
 Purchased files stay local in `assets/saucermen/`, which is Git-ignored. Indexing never edits or uploads them. Their included notices prohibit modification and sharing: this workflow only places intact meshes, does not fuse them, and does not export combined production meshes.
@@ -98,7 +186,16 @@ Use `generate --all` only for the complete mechanical/style regression matrix, n
 
 ## Prompt an agent
 
-The shared skill is `.agents/skills/printable-terrain/SKILL.md`; both Maki and Pi discover project `.agents/skills` directories. It contains the mechanical contract, generation loop, validation requirements, and physical-release gate.
+The shared skills live in `.agents/skills/`, discovered by Maki, Pi, and Droid's compatible
+skill loader:
+
+- `terrain-workshop/SKILL.md`: adaptive encounter interviews, persistent decisions,
+  visible iterations, interactive 3D review and printing lists.
+- `printable-terrain/SKILL.md`: library inspection, immutable geometry, mechanical
+  contracts, generation, validation and the physical-release gate.
+
+In Droid, use `/terrain-workshop` or ask for it by name. Start a new session if a newly
+added skill is not yet visible; `/skills` shows discovered skills.
 
 Example prompt:
 
@@ -139,6 +236,8 @@ The mechanical fixture assembly uses a 0.01 mm presentation gap to preserve inde
 - `src/terrain/library.py`: immutable library indexing, annotations, provenance and search.
 - `src/terrain/visual.py`: real mesh thumbnails and contact sheets.
 - `src/terrain/scene.py`: hash-pinned scene placement, previews and print lists.
+- `src/terrain/workshop.py`: saved encounter iterations and reproducible private reviews.
+- `src/terrain/review.py`, `templates/`: offline interactive WebGL review and revision browser.
 - `src/terrain/`: mechanical catalog, OpenSCAD build pipeline, mesh inspection, and CLI.
 - `library/saucermen.json`: editable metadata, not copies of purchased meshes.
 - `scenes/`: editable scene briefs and placements referencing the private library.

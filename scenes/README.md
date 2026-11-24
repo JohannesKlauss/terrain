@@ -5,6 +5,26 @@ contain no purchased mesh data. Run the library index command before building.
 Coordinate paths to the catalog are relative to the scene JSON, so the repository
 can move; reindex after moving the private library.
 
+## Collaborative encounter workshops
+
+Use `.agents/skills/terrain-workshop/SKILL.md` to develop a scene through short interviews
+and visible drafts. A workshop is a directory, unlike the standalone example below:
+
+```bash
+uv run terrain workshop init scenes/my-encounter --name "My encounter" --brief "The defining scene"
+```
+
+The agent maintains `scene.json` and `design.md`, then uses `terrain workshop checkpoint`
+to save numbered source snapshots in `revisions/`. Each records encounter context,
+villains, objectives, spatial choices, assumptions, feedback and a change summary.
+Private interactive reviews and printing lists go under `build/workshops/my-encounter/`.
+Open its `index.html` to browse iterations, rotate the 3D scene, hide pieces, inspect
+four fixed views, and see which original files and quantities to print.
+
+Do not add generated review HTML to this directory: it embeds private purchased geometry.
+Keep only source JSON and the design journal here. The page does not send feedback to the
+agent automatically; discuss it in chat or supply the downloaded notes.
+
 ## Vark laboratory: three directions
 
 These are composition proposals, not print-approved designs. No new monster or

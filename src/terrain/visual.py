@@ -10,7 +10,13 @@ from PIL import Image, ImageDraw, ImageFont
 from terrain.build import BuildError, openscad_version, run_openscad
 from terrain.library import read_mesh, sha256, source_path, write_json
 
-CAMERAS = {"iso": "55,0,25", "top": "0,0,0", "underside": "180,0,0"}
+CAMERAS = {
+    "iso": "55,0,25",
+    "reverse": "55,0,205",
+    "front": "90,0,0",
+    "top": "0,0,0",
+    "underside": "180,0,0",
+}
 
 
 def preview_source(catalog, asset, cache_dir):

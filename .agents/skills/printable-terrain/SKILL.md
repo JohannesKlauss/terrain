@@ -7,6 +7,11 @@ description: Design library-first tabletop scenes from local terrain collections
 
 Work from the repository root. Default to designing scenes from the user's actual library, not generating a room of primitive blocks. Treat purchased meshes and the official OpenLOCK STLs as immutable inputs. Original genre modules may change only approved decorative regions of the official templates.
 
+For discussion-driven encounter design, short adaptive interviews, saved visual iterations,
+and interactive local review, also read `.agents/skills/terrain-workshop/SKILL.md`.
+That workflow permits freely drafted compositions followed by a pause for visual feedback;
+choosing a production direction and physical/print approval remain separate decisions.
+
 ## Library-first scene workflow (default)
 
 1. Read the scene request as an art brief. Establish the defining image, narrative, mood, focal silhouette, space available, miniature bases and movement needs. Ask about decisions that change the composition or fit.

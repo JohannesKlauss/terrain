@@ -10,6 +10,7 @@ from terrain.library import index_library, load_catalog, search_assets
 from terrain.mesh import MeshRules, inspect_mesh
 from terrain.scene import add_placement, assemble_scene, init_scene
 from terrain.visual import preview_library
+from terrain.workshop import checkpoint, init_workshop, review_workshop
 
 DEFAULT_CATALOG = ROOT / "build" / "library" / "catalog.json"
 
@@ -65,6 +66,25 @@ def create_parser():
     build.add_argument("--output-dir", type=Path)
     build.add_argument("--preview", action="store_true")
     build.add_argument("--openscad", default="openscad")
+
+    workshop = commands.add_parser(
+        "workshop", help="Iterate on encounters with saved drafts and local interactive 3D review"
+    )
+    workshop_commands = workshop.add_subparsers(dest="action", required=True)
+    start = workshop_commands.add_parser("init")
+    start.add_argument("path", type=Path)
+    start.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
+    start.add_argument("--name", required=True)
+    start.add_argument("--brief", required=True)
+    for action in ("checkpoint", "review"):
+        sub = workshop_commands.add_parser(action)
+        sub.add_argument("path", type=Path)
+        sub.add_argument("--output-dir", type=Path)
+        sub.add_argument("--openscad", default="openscad")
+        if action == "checkpoint":
+            sub.add_argument("--title", required=True)
+            sub.add_argument("--changes", required=True)
+            sub.add_argument("--feedback", default="")
 
     validate = commands.add_parser("validate")
     validate.add_argument("artifacts", nargs="+", type=Path)
@@ -133,6 +153,21 @@ def validation_rules(path, degenerate_override):
     return rules
 
 
+def run_workshop(args):
+    if args.action == "init":
+        result = init_workshop(args.path, args.catalog, args.name, args.brief)
+    else:
+        output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
+        if args.action == "checkpoint":
+            result = checkpoint(
+                args.path, output, args.title, args.changes, args.feedback, args.openscad
+            )
+        else:
+            result = review_workshop(args.path, output, args.openscad)
+    print(json.dumps(result, indent=2, default=str))
+    return 0
+
+
 def run_validate(args):
     reports = [
         inspect_mesh(path, validation_rules(path, args.allow_degenerate)) for path in args.artifacts
@@ -150,6 +185,8 @@ def main(argv=None):
             return run_library(args)
         if args.command == "scene":
             return run_scene(args)
+        if args.command == "workshop":
+            return run_workshop(args)
         return run_validate(args)
     except (BuildError, ValueError, OSError, KeyError) as error:
         print(f"error: {error}", file=sys.stderr)

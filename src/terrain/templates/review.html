@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: file:; connect-src 'none';">
+  <title>$title · $iteration</title>
+  <style>$style</style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">VISUAL DRAFT / ITERATION $iteration</p>
+      <h1>$title</h1>
+      <p class="brief">$brief</p>
+      <p class="muted">$dimensions mm · Conservative bounds · Fit and physical validation pending</p>
+    </header>
+    <section class="viewer" aria-label="Interactive terrain">
+      <div class="toolbar" role="group" aria-label="Camera controls">
+        <button data-view="iso">Isometric</button>
+        <button data-view="reverse">Reverse</button>
+        <button data-view="top">Top</button>
+        <button data-view="front">Front</button>
+        <button id="zoom-in" aria-label="Zoom in">+</button>
+        <button id="zoom-out" aria-label="Zoom out">−</button>
+        <button id="reset">Reset</button>
+      </div>
+      <canvas id="terrain" tabindex="0" aria-label="Terrain 3D view. Drag to orbit, shift-drag or right-drag to pan, scroll to zoom. Arrow keys orbit; plus and minus zoom; R resets."></canvas>
+      <p id="viewer-status" role="status">Loading local geometry…</p>
+      <p class="viewer-help">Drag: orbit · Shift/right-drag: pan · Scroll: zoom · Focus view for keyboard controls</p>
+    </section>
+    <details>
+      <summary>Show / hide pieces</summary>
+      <p class="muted">Visibility is inspection only. It does not change the printing list or saved layout.</p>
+      <div class="parts">$parts</div>
+    </details>
+    <section class="review-notes">
+      <article><h2>What changed</h2><p>$changes</p></article>
+      <article><h2>Feedback received</h2><p>$feedback_received</p></article>
+    </section>
+    <section>
+      <h2>Next iteration</h2>
+      <p class="muted">Use piece IDs from “Show / hide pieces” when suggesting changes. Paste your notes into the agent conversation, or download them. This page does not send messages or edit the scene.</p>
+      <label for="feedback">Your feedback on this draft</label>
+      <textarea id="feedback" rows="3" placeholder="Keep the ritual focus, but widen the approach and give the villain a retreat route…"></textarea>
+      <button id="download-feedback">Download feedback</button>
+      <span id="feedback-status" role="status"></span>
+    </section>
+    <section id="print-list">
+      <div class="section-title"><h2>Printing list</h2><a href="print-list.csv" download>Download CSV</a></div>
+      <p class="muted">Print unchanged original files. Required = copies in this iteration. Unknown stock is not zero. Reindex confirmed printed counts before the next checkpoint. This is a parts list, not slicer or print approval.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Original asset / license</th><th>Required</th><th>Printed</th><th>To print</th></tr></thead>
+        <tbody>$rows</tbody>
+      </table></div>
+    </section>
+    <section><h2>Other angles</h2><div class="previews">$previews</div></section>
+    <details><summary>Encounter brief</summary><pre>$encounter</pre></details>
+    <details><summary>Art direction and missing assets</summary><pre>$art_direction</pre></details>
+    <details><summary>Design journal at this iteration</summary><pre>$journal</pre></details>
+    <details><summary>Unresolved checks</summary><ul>$checks</ul><a href="report.json">Full report</a> · <a href="assembly.md">Assembly instructions</a></details>
+    <footer>PRIVATE LOCAL PREVIEW · Original meshes remain intact · Do not upload or redistribute this page or its geometry.</footer>
+  </main>
+  <script type="application/json" id="scene-data">$data</script>
+  <script>$script</script>
+</body>
+</html>
