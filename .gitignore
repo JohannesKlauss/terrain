@@ -9,3 +9,7 @@ dist/
 
 # Purchased, private meshes. Never publish vendor files with this project.
 /assets/saucermen/
+
+# Local original drafts and approved models; approval is not permission to publish.
+/drafts/
+/assets/custom/

@@ -6,9 +6,10 @@ from pathlib import Path
 
 from terrain.build import ROOT, BuildError, generate_model, generate_mvp
 from terrain.catalog import named_spec, part_contract
+from terrain.custom import approve_custom, create_custom, preview_custom
 from terrain.library import index_library, load_catalog, search_assets
 from terrain.mesh import MeshRules, inspect_mesh
-from terrain.scene import add_placement, assemble_scene, init_scene
+from terrain.scene import add_custom_placement, add_placement, assemble_scene, init_scene
 from terrain.visual import preview_library
 from terrain.workshop import checkpoint, init_workshop, review_workshop
 
@@ -54,6 +55,7 @@ def create_parser():
     init.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
     init.add_argument("--name", required=True)
     init.add_argument("--brief", required=True)
+    init.add_argument("--no-library", action="store_true", help="Start with custom drafts only")
     add = scene_commands.add_parser("add")
     add.add_argument("path", type=Path)
     add.add_argument("--asset", required=True)
@@ -61,6 +63,13 @@ def create_parser():
     add.add_argument("--at", nargs=3, type=float, required=True)
     add.add_argument("--rotate", nargs=3, type=float, default=(0, 0, 0))
     add.add_argument("--role", default="architecture")
+    custom_add = scene_commands.add_parser("add-custom", help="Place an unindexed custom draft")
+    custom_add.add_argument("path", type=Path)
+    custom_add.add_argument("--draft", type=Path, required=True)
+    custom_add.add_argument("--id", required=True)
+    custom_add.add_argument("--at", nargs=3, type=float, required=True)
+    custom_add.add_argument("--rotate", nargs=3, type=float, default=(0, 0, 0))
+    custom_add.add_argument("--role", default="architecture")
     build = scene_commands.add_parser("build")
     build.add_argument("path", type=Path)
     build.add_argument("--output-dir", type=Path)
@@ -76,6 +85,7 @@ def create_parser():
     start.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
     start.add_argument("--name", required=True)
     start.add_argument("--brief", required=True)
+    start.add_argument("--no-library", action="store_true", help="Start with custom drafts only")
     for action in ("checkpoint", "review"):
         sub = workshop_commands.add_parser(action)
         sub.add_argument("path", type=Path)
@@ -85,6 +95,33 @@ def create_parser():
             sub.add_argument("--title", required=True)
             sub.add_argument("--changes", required=True)
             sub.add_argument("--feedback", default="")
+
+    custom = commands.add_parser(
+        "custom", help="Model original Blender drafts, review, then approve"
+    )
+    custom_commands = custom.add_subparsers(dest="action", required=True)
+    create = custom_commands.add_parser("create", help="Run a trusted local Blender Python script")
+    create.add_argument("path", type=Path, help="New draft directory outside assets")
+    create.add_argument("--script", type=Path, required=True)
+    create.add_argument("--name", required=True)
+    create.add_argument("--brief", required=True)
+    create.add_argument("--license", default="Original personal-use work", dest="license_name")
+    create.add_argument("--blender", help="Blender executable (auto-detected, including macOS app)")
+    create.add_argument("--openscad", default="openscad")
+    preview = custom_commands.add_parser("preview")
+    preview.add_argument("draft", type=Path)
+    preview.add_argument("--openscad", default="openscad")
+    approve = custom_commands.add_parser("approve", help="Only after explicit user confirmation")
+    approve.add_argument("draft", type=Path)
+    approve.add_argument("--id", required=True)
+    approve.add_argument("--assets-root", type=Path, default=ROOT / "assets/custom")
+    approve.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
+    approve.add_argument(
+        "--approval", required=True, help="Record the user's explicit confirmation"
+    )
+    approve.add_argument(
+        "--review-sha256", required=True, help="Draft manifest hash shown in review"
+    )
 
     validate = commands.add_parser("validate")
     validate.add_argument("artifacts", nargs="+", type=Path)
@@ -126,7 +163,13 @@ def run_library(args):
 
 def run_scene(args):
     if args.action == "init":
-        result = init_scene(args.path, args.catalog, args.name, args.brief)
+        result = init_scene(
+            args.path, None if args.no_library else args.catalog, args.name, args.brief
+        )
+    elif args.action == "add-custom":
+        result = add_custom_placement(
+            args.path, args.draft, args.id, args.at, args.rotate, args.role
+        )
     elif args.action == "add":
         result = add_placement(
             args.path,
@@ -155,7 +198,9 @@ def validation_rules(path, degenerate_override):
 
 def run_workshop(args):
     if args.action == "init":
-        result = init_workshop(args.path, args.catalog, args.name, args.brief)
+        result = init_workshop(
+            args.path, None if args.no_library else args.catalog, args.name, args.brief
+        )
     else:
         output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
         if args.action == "checkpoint":
@@ -176,6 +221,22 @@ def run_validate(args):
     return 0 if all(report["valid"] for report in reports) else 1
 
 
+def run_custom(args):
+    if args.action == "create":
+        result = create_custom(
+            args.path, args.script, args.name, args.brief, args.license_name, args.blender
+        )
+        result.update(preview_custom(result["draft"], args.openscad))
+    elif args.action == "preview":
+        result = preview_custom(args.draft, args.openscad)
+    else:
+        result = approve_custom(
+            args.draft, args.id, args.assets_root, args.catalog, args.approval, args.review_sha256
+        )
+    print(json.dumps(result, indent=2, default=str))
+    return 0
+
+
 def main(argv=None):
     args = create_parser().parse_args(argv)
     try:
@@ -187,6 +248,8 @@ def main(argv=None):
             return run_scene(args)
         if args.command == "workshop":
             return run_workshop(args)
+        if args.command == "custom":
+            return run_custom(args)
         return run_validate(args)
     except (BuildError, ValueError, OSError, KeyError) as error:
         print(f"error: {error}", file=sys.stderr)

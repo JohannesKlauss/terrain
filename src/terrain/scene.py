@@ -9,22 +9,23 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from terrain.library import load_catalog, read_json, sha256, source_path, write_json
-from terrain.visual import CAMERAS, preview_source, render_source
+from terrain.library import catalog_roots, load_catalog, read_json, sha256, source_path, write_json
+from terrain.visual import CAMERAS, label_custom_preview, preview_source, render_source
 
 
 def init_scene(path, catalog, name, brief):
     path = Path(path).resolve()
     if path.exists():
         raise ValueError(f"Scene already exists: {path}")
-    load_catalog(catalog)
+    if catalog is not None:
+        load_catalog(catalog)
     write_json(
         path,
         {
             "schema_version": 1,
             "name": name,
             "brief": brief,
-            "catalog": os.path.relpath(Path(catalog).resolve(), path.parent),
+            "catalog": os.path.relpath(Path(catalog).resolve(), path.parent) if catalog else None,
             "art_direction": {
                 "mood": "",
                 "focal_point": "",
@@ -41,7 +42,25 @@ def init_scene(path, catalog, name, brief):
 def scene_catalog(path, scene):
     if scene.get("schema_version") != 1 or not isinstance(scene.get("placements"), list):
         raise ValueError("Unsupported scene manifest")
-    return load_catalog((Path(path).resolve().parent / scene["catalog"]).resolve())
+    parent = Path(path).resolve().parent
+    catalog = (
+        load_catalog((parent / scene["catalog"]).resolve())
+        if scene.get("catalog")
+        else {"schema_version": 1, "root": None, "assets": []}
+    )
+    custom = scene.get("custom_models", {})
+    if not isinstance(custom, dict):
+        raise ValueError("custom_models must map draft IDs to manifest paths")
+    for identity, reference in custom.items():
+        from terrain.custom import draft_asset
+
+        asset = draft_asset(parent / reference)
+        if asset["id"] != identity:
+            raise ValueError(f"Custom draft manifest changed since placement: {identity}")
+        if any(item["id"] == identity for item in catalog["assets"]):
+            raise ValueError(f"Duplicate custom asset: {identity}")
+        catalog["assets"].append(asset)
+    return catalog
 
 
 def vector(value, name):
@@ -105,6 +124,35 @@ def add_placement(path, asset_id, placement_id, position, rotation=(0, 0, 0), ro
     return {"scene": Path(path), "placement": placement}
 
 
+def add_custom_placement(
+    path, manifest, placement_id, position, rotation=(0, 0, 0), role="architecture"
+):
+    from terrain.custom import draft_asset
+
+    path, manifest = Path(path).resolve(), Path(manifest).resolve()
+    asset = draft_asset(manifest)
+    scene = read_json(path)
+    catalog = scene_catalog(path, scene)
+    if any(manifest.is_relative_to(root) for root in catalog_roots(catalog).values()):
+        raise ValueError("Unindexed custom drafts must stay outside indexed library roots")
+    if any(p["id"] == placement_id for p in scene["placements"]):
+        raise ValueError(f"duplicate placement id: {placement_id}")
+    placement = {
+        "id": placement_id,
+        "asset": asset["id"],
+        "source_sha256": asset["sha256"],
+        "position_mm": list(position),
+        "rotation_deg": list(rotation),
+        "anchor": "bottom_center",
+        "role": role,
+    }
+    placement_matrix(placement, asset)
+    scene.setdefault("custom_models", {})[asset["id"]] = os.path.relpath(manifest, path.parent)
+    scene["placements"].append(placement)
+    write_json(path, scene)
+    return {"scene": path, "placement": placement, "library_status": "custom_unindexed"}
+
+
 def resolve_placements(path):
     scene = read_json(path)
     catalog = scene_catalog(path, scene)
@@ -152,10 +200,15 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=(
         raise ValueError(f"Unknown scene preview views: {views}")
     scene, catalog, resolved = resolve_placements(path)
     output_dir = Path(output_dir).resolve()
-    inputs = {
-        Path(path).resolve(),
-        (Path(path).resolve().parent / scene["catalog"]).resolve(),
-    }
+    inputs = {Path(path).resolve()}
+    if scene.get("catalog"):
+        inputs.add((Path(path).resolve().parent / scene["catalog"]).resolve())
+    for asset in catalog["assets"]:
+        if asset.get("draft_manifest"):
+            inputs.update(
+                Path(asset["draft_manifest"]).parent / name
+                for name in ("draft.json", "model.stl", "model.blend", "build.py")
+            )
     if catalog.get("metadata"):
         inputs.add(Path(catalog["metadata"]).resolve())
     outputs = {
@@ -168,7 +221,9 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=(
             *(f"{view}.png" for view in views),
         )
     }
-    if inputs & outputs or output_dir.is_relative_to(Path(catalog["root"]).resolve()):
+    if inputs & outputs or any(
+        output_dir.is_relative_to(root) for root in catalog_roots(catalog).values()
+    ):
         raise ValueError("Assembly output could overwrite inputs; use a separate build directory")
     output_dir.mkdir(parents=True, exist_ok=True)
     source = output_dir / "assembly.scad"
@@ -179,14 +234,29 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=(
             sources[asset["id"]] = preview_source(catalog, asset, output_dir / "cache")
         lines.append(
             f"multmatrix({json.dumps(matrix.tolist())}) "
-            f"import({json.dumps(str(sources[asset['id']]), ensure_ascii=False)});"
+            + ("color([0.78, 0.48, 0.91]) " if asset.get("draft_manifest") else "")
+            + f"import({json.dumps(str(sources[asset['id']]), ensure_ascii=False)});"
         )
     source.write_text("\n".join(lines) + "\n")
     counts = Counter(asset["id"] for _, asset, _, _ in resolved)
     unique = {asset["id"]: asset for _, asset, _, _ in resolved}
-    print_list = []
+    print_list, custom_models = [], []
     for asset_id, count in counts.items():
         asset = unique[asset_id]
+        if asset.get("library_status") == "custom_unindexed":
+            custom_models.append(
+                {
+                    "asset": asset_id,
+                    "name": asset["name"],
+                    "required": count,
+                    "library_status": "custom_unindexed",
+                    "approval": "pending",
+                    "draft_manifest": asset["draft_manifest"],
+                    "review_sha256": sha256(asset["draft_manifest"]),
+                    "sha256": asset["sha256"],
+                }
+            )
+            continue
         printed = (
             scene.get("iteration", {}).get("printed_inventory", {}).get(asset_id, asset["printed"])
         )
@@ -220,11 +290,21 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=(
         "Unknown printed inventory stays null; owning digital files does not imply printed stock.",
         "Per-asset licenses apply; this assembly has no blanket redistribution license.",
     ]
+    if custom_models:
+        warnings.append(
+            "Purple custom models are unindexed drafts awaiting explicit library approval; "
+            "they are excluded from the printing list."
+        )
     previews = []
     if preview:
         for view in views:
             destination = output_dir / f"{view}.png"
             render_source(source, destination, view, openscad, size=(1600, 1200))
+            if custom_models:
+                label_custom_preview(
+                    destination,
+                    [p["id"] for p, asset, _, _ in resolved if asset.get("draft_manifest")],
+                )
             previews.append(destination)
     report_path = output_dir / "report.json"
     write_json(
@@ -236,13 +316,18 @@ def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=(
             "encounter": scene.get("encounter", {}),
             "iteration": scene.get("iteration", {}),
             "placements": [
-                {**placement, "world_aabb_mm": bounds.tolist()}
-                for placement, _, _, bounds in resolved
+                {
+                    **placement,
+                    "world_aabb_mm": bounds.tolist(),
+                    "library_status": asset.get("library_status", "indexed"),
+                }
+                for placement, asset, _, bounds in resolved
             ],
             "bounds_mm": bounds.tolist(),
             "bounds_method": "Conservative transformed source AABBs, not exact mesh bounds",
             "extents_mm": np.ptp(bounds, axis=0).tolist(),
             "print_list": print_list,
+            "custom_models": custom_models,
             "aabb_overlaps": overlaps,
             "warnings": warnings,
             "artistic_review": "pending",

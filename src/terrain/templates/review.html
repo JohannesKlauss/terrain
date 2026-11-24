@@ -14,6 +14,7 @@
       <h1>$title</h1>
       <p class="brief">$brief</p>
       <p class="muted">$dimensions mm · Conservative bounds · Fit and physical validation pending</p>
+      $draft_notice
     </header>
     <section class="viewer" aria-label="Interactive terrain">
       <div class="toolbar" role="group" aria-label="Camera controls">
@@ -46,6 +47,7 @@
       <button id="download-feedback">Download feedback</button>
       <span id="feedback-status" role="status"></span>
     </section>
+    $custom_models
     <section id="print-list">
       <div class="section-title"><h2>Printing list</h2><a href="print-list.csv" download>Download CSV</a></div>
       <p class="muted">Print unchanged original files. Required = copies in this iteration. Unknown stock is not zero. Reindex confirmed printed counts before the next checkpoint. This is a parts list, not slicer or print approval.</p>

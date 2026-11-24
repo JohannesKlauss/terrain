@@ -13,7 +13,7 @@ as artistic, print, or physical-fit approval.
 
 Read `.agents/skills/printable-terrain/SKILL.md` and follow its library, licensing,
 source-hash, modelling, and physical-release rules. This workflow orchestrates that
-capability; it does not replace it or add a new modelling service.
+capability; it does not replace its modelling and approval gates.
 
 ## 1. Resume before interviewing
 
@@ -78,6 +78,12 @@ You may implement a labelled recommended draft immediately so the user has somet
 concrete to critique. Save unchosen directions in `art_direction.alternatives`.
 Prioritize the distinctive focal silhouette and playable negative space over scatter.
 Missing hero sculpts remain explicit gaps, not crude blocks presented as finished art.
+When an original custom piece is needed, use the printable-terrain Blender draft workflow.
+Place it with `terrain scene add-custom ... --draft <draft.json> --id <piece-id> --at X Y Z`.
+Custom drafts appear purple and explicitly unindexed in scene reviews and stay outside
+`assets`. Draft freely, then pause for feedback. **Adding a custom model to the library
+requires separate, explicit user approval of that model revision**, even when the user
+already approved the scene composition. Never invoke `custom approve` on your own.
 
 ## 4. Persist the discussion
 
@@ -158,7 +164,8 @@ For **every** iteration:
 5. Summarize printing quantities: required copies per original asset, confirmed printed
    stock, remaining copies. Unknown stock means **unknown**, never zero. CSV source
    paths identify the unchanged originals to open in the slicer. Keep missing/non-library
-   pieces separate from this list.
+   pieces separate from this list. Unindexed Blender drafts have their own purple section
+   with quantities and review hashes; they are not part of the printable library list.
 6. Ask for focused visual feedback: what to keep, what to change, and the next meaningful
    decision. Refer to a camera angle and stable piece IDs. **Stop and wait.**
 

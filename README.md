@@ -1,6 +1,8 @@
 # terrain
 
 Library-first, agent-driven tabletop scene design for 28–32 mm miniatures. Browse your actual meshes visually, choose an art direction, and arrange intact pieces in an editable scene. A separate deterministic OpenSCAD generator preserves the official OpenLOCK mechanical core for original additions.
+Original Blender models can join a scene as clearly labelled, unindexed drafts.
+Only explicit approval imports them into the local library and `assets/custom/`.
 
 **Status: software prototype, not print-approved.** Library measurements and assembly previews do not certify connector fit, miniature clearance, stability, or printability. Slicer review and physical tests remain mandatory.
 
@@ -26,7 +28,8 @@ source snapshot, the feedback that prompted it, and its change summary. The loca
 page lets you browse revisions, **orbit/pan/zoom actual library geometry**, use isometric,
 reverse, top and front cameras, and hide pieces to inspect interiors. Four mesh PNGs
 remain available if WebGL 2 is unavailable. The 50 mm viewer grid is a reference ruler,
-not an inferred asset module or game grid.
+not an inferred asset module or game grid. Original Blender drafts can appear alongside
+library pieces, in purple and explicitly unindexed until separate model approval.
 
 The agent runs these commands on your behalf, after indexing the library:
 
@@ -154,9 +157,79 @@ Edit `art_direction` to record the mood, focal point, composition, alternatives 
 
 The 3MF preview adapter may create a private flattened STL cache, preserving instance transforms. This is not a repaired or production-approved model. Originals stay unchanged. No assembly receives the official templates' license by inheritance. AABB overlap is not an exact collision test, and no connector alignment is inferred from a pack name.
 
-The former block-based Vark props, fixed arena, and `generate-set vark_lab` command have been retired. Online discovery, Blender-based original modelling, automatic connector detection and figure generation are later stages, not implemented capabilities of this milestone.
+The former block-based Vark props, fixed arena, and `generate-set vark_lab` command have been retired. Online discovery, automatic connector detection and automatic figure generation remain future capabilities.
 
 An inspected example is `scenes/pressure-transept.json`; build it with `uv run terrain scene build scenes/pressure-transept.json --preview` after indexing. It is an artistic draft, roughly 240 × 320 × 79 mm, not a complete or print-approved lab. Three selected original files report non-watertight processed topology; see `scenes/README.md` and the manifest's fit notes. No automatic repair or exact Boolean union is used for previews.
+
+## Original models in Blender
+
+Ask the agent to model an original piece, inspect it with you, and add it to the library
+**only after you approve that particular revision**. The terrain skills follow this gate.
+Scene approval, silence, or a successful render never count as library approval.
+
+```bash
+# Runs a trusted local script inside Blender, starting with an empty scene.
+uv run terrain custom create drafts/plinth-v1 \
+  --script examples/blender/stepped_plinth.py \
+  --name "Stepped plinth" --brief "An original standalone raised platform"
+```
+
+Blender is auto-detected on PATH or at `/Applications/Blender.app`; use `--blender` for
+another installation. OpenSCAD still renders the neutral PNG previews. The Python script
+creates mesh objects using **one coordinate unit per millimetre**. The runner saves an
+editable `model.blend`, exports evaluated mesh objects with world transforms and modifiers,
+and records hashes, the source script, license, and mesh diagnostics. Render-hidden objects
+are excluded; scripts must convert curves/text to meshes. Scripts run as local Python,
+**not in a sandbox**. Never run untrusted model-pack scripts.
+
+Open `drafts/plinth-v1/preview/review.html`. Orbit the actual mesh and inspect the four
+PNG views and `validation.json`. Unapproved custom pieces appear **purple**, labelled
+**Custom · unindexed · approval pending**, with a separate quantity list and review hash.
+They are not library entries or printable-inventory items. Nothing from creation or
+preview is copied into `assets`.
+
+To inspect a draft in a scene alongside purchased pieces:
+
+```bash
+uv run terrain scene add-custom scenes/my-lab.json \
+  --draft drafts/plinth-v1/draft.json --id ritual-platform --at 80 40 0
+uv run terrain scene build scenes/my-lab.json --preview
+# Or save a normal workshop checkpoint for an interactive scene review.
+```
+
+Use `scene init ... --no-library` or `workshop init ... --no-library` for a custom-only
+scene without an existing catalog. Saved workshop revisions pin draft manifests and
+source hashes, rebase references, and preserve the distinction between drafts and library
+assets. Keep the original draft directories to rebuild those revisions.
+
+**After you explicitly approve the reviewed model**, the agent runs:
+
+```bash
+uv run terrain custom approve drafts/plinth-v1/draft.json --id plinth \
+  --review-sha256 <manifest-hash-shown-in-review> \
+  --approval "<your explicit confirmation for this revision>"
+```
+
+Approval checks the reviewed manifest and all source hashes, validates mesh topology, and
+copies `model.blend`, `model.stl`, `build.py`, and `provenance.json` into
+`assets/custom/plinth/`. It indexes the approved STL without replacing the purchased
+library or its annotations. Approved roots are remembered during normal reindexing.
+With no catalog, approval initializes a custom-only catalog. `--catalog` selects another
+catalog and `--assets-root` selects another approved destination.
+
+The command returns the indexed asset ID. The agent deliberately replaces draft references
+in the working scene with this ID, retaining placement IDs and transforms. Existing
+snapshots stay unchanged and still show their original unindexed drafts. Approval records
+the confirmation supplied by the caller; it is a human workflow gate, not authentication.
+
+Create revisions in new directories (`plinth-v2`, etc.). Existing drafts and approved IDs
+are never overwritten. If modelling succeeds but PNG rendering fails, the draft remains;
+retry with `uv run terrain custom preview drafts/plinth-v1/draft.json`.
+`drafts/` and `assets/custom/` are local and Git-ignored. Library approval does not publish
+anything, start printing, or approve slicer settings or physical fit. The default license
+is original personal-use work without redistribution; use `--license` to record the actual
+license. Purchased meshes must not be edited or copied into new original models.
+The example plinth has no connectors and makes no OpenLOCK compatibility claim.
 
 ## Quick start
 
@@ -237,6 +310,8 @@ The mechanical fixture assembly uses a 0.01 mm presentation gap to preserve inde
 - `src/terrain/visual.py`: real mesh thumbnails and contact sheets.
 - `src/terrain/scene.py`: hash-pinned scene placement, previews and print lists.
 - `src/terrain/workshop.py`: saved encounter iterations and reproducible private reviews.
+- `src/terrain/custom.py`, `blender_runner.py`: original Blender drafts and explicit approval import.
+- `examples/blender/`: original modelling scripts using millimetre coordinates.
 - `src/terrain/review.py`, `templates/`: offline interactive WebGL review and revision browser.
 - `src/terrain/`: mechanical catalog, OpenSCAD build pipeline, mesh inspection, and CLI.
 - `library/saucermen.json`: editable metadata, not copies of purchased meshes.
