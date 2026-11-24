@@ -1,0 +1,13 @@
+[mcp.openscad]
+command = ["/Users/johannesspaceteams/.local/bin/uvx", "openscad-mcp@0.6.1"]
+environment = {
+  OPENSCAD_PATH = "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
+  MCP_ALLOWED_PATHS = "/Users/johannesspaceteams/Documents/Github/terrain",
+  MCP_TEMP_DIR = "/Users/johannesspaceteams/Documents/Github/terrain/build/mcp-tmp",
+  MCP_RENDER_TIMEOUT = "300",
+  MCP_MAX_MEMORY_MB = "4096",
+  XDG_CACHE_HOME = "/Users/johannesspaceteams/Documents/Github/terrain/build/cache",
+}
+timeout = 300000
+enabled = true
+always_load = true

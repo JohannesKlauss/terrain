@@ -1,0 +1,11 @@
+[mcp]
+
+[mcp.openscad]
+allow = [
+    "reference",
+    "check_openscad",
+    "measure",
+    "validate",
+    "render",
+    "scad_eval",
+]
