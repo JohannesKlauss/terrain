@@ -1,0 +1,52 @@
+{
+  "system": "OpenLOCK",
+  "system_version": "8.6",
+  "clip_version": "5.4",
+  "creator": "Printable Scenery",
+  "attribution": "Printable Scenery - https://www.printablescenery.com/",
+  "license": "CC BY-NC 4.0",
+  "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "commercial_use": false,
+  "retrieved": "2026-11-24",
+  "developer_url": "https://www.printablescenery.com/2017/04/26/openlock-developer-information/",
+  "notes": "Unmodified official template files from Printable Scenery's MyMiniFactory listings. The mirrors describe the 8.4 distribution; the current 8.6 system changes do not rename these required files. Compatibility still requires physical fit validation.",
+  "files": {
+    "E-TRP-v7.6.stl": {
+      "source_filename": "e-trp-v7-6.stl",
+      "source_url": "https://www.myminifactory.com/object/3d-print-openlock-29338",
+      "sha256": "6809aab3fdc64f78d651faaba01049b306b54dad7ba9feaa28e038dba25dc17a",
+      "license": "CC BY-NC 4.0",
+      "modifications": "none",
+      "known_mesh_issues": {
+        "openscad_mcp_0_6_1": {
+          "open_edge_count": 49,
+          "non_manifold_edge_count": 0,
+          "degenerate_triangle_count": 19,
+          "generated_plain_stl_matches_baseline": true,
+          "note": "The untouched official STL and the generated plain STL report the same 49 open edges. Trimesh's processed/welded topology reports watertight. Verify in the target slicer."
+        }
+      }
+    },
+    "OpenLOCK-Clip-v5.4.stl": {
+      "source_filename": "openlock-clip-v5-4.stl",
+      "source_url": "https://www.myminifactory.com/object/3d-print-openlock-29338",
+      "sha256": "50d2e770f52f6c6836d157b4351b39a6b6733ddb625b2cb08611866965fe7cd6",
+      "license": "CC BY-NC 4.0",
+      "modifications": "none"
+    },
+    "A-Wall-Low-TRP-v7.2.stl": {
+      "source_filename": "a-wall-low-trp-v7-2.stl",
+      "source_url": "https://www.myminifactory.com/object/3d-print-openlock-columns-and-side-locking-walls-7-2-updated-29343",
+      "sha256": "635029a34ea89ba4b6d4c3457cbe8523dfb09b25d44678c51c727612d0dbb3d4",
+      "license": "CC BY-NC 4.0",
+      "modifications": "none"
+    },
+    "Column-L-TRP-v7.5.stl": {
+      "source_filename": "column-l-trp-v7-5.stl",
+      "source_url": "https://www.myminifactory.com/object/3d-print-openlock-columns-and-side-locking-walls-7-2-updated-29343",
+      "sha256": "91255a6aacb8bc8a360d467f70eb978c11b65ce8987d99420bf90a6e911fe5b1",
+      "license": "CC BY-NC 4.0",
+      "modifications": "none"
+    }
+  }
+}

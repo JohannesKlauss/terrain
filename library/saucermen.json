@@ -1,0 +1,90 @@
+{
+  "defaults": {
+    "author": "Saucermen Studios",
+    "license": {
+      "name": "Personal use only",
+      "modify": false,
+      "redistribute": false,
+      "url": "https://saucermenstudios.com.au/terms-conditions/"
+    }
+  },
+  "collections": {
+    "DarkMyth Dungeon": {
+      "tags": ["dungeon", "gothic", "fantasy", "stone", "ruins"]
+    },
+    "DarkMyth Village": {
+      "tags": ["village", "fantasy", "medieval", "architecture"]
+    },
+    "Flatline City - Core Set": {
+      "tags": ["sciencefiction", "cyberpunk", "urban", "industrial", "laboratory"]
+    },
+    "Flatline City Underground Tunnels": {
+      "tags": ["sciencefiction", "industrial", "underground", "tunnel", "laboratory"]
+    },
+    "Scif Greebles 02": {
+      "tags": ["sciencefiction", "industrial", "greeble", "machinery", "laboratory"]
+    },
+    "Scifi Greebles 1": {
+      "tags": ["sciencefiction", "industrial", "greeble", "machinery", "laboratory"]
+    }
+  },
+  "assets": {
+    "Flatline City Underground Tunnels/Tunnels - Frame 2x2 A.stl": {
+      "description": "Open industrial chamber frame, upright corner and intermediate posts, four-panel floor",
+      "tags": ["chamber", "posts", "open", "clean deck"],
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Frame 2x1 A.stl": {
+      "description": "Long narrow chamber frame with upright side posts and a round central floor detail",
+      "tags": ["approach", "processional", "circular detail"],
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Frame 2x1 D.stl": {
+      "description": "Narrow industrial frame with rough floor and integrated scattered barrel forms",
+      "tags": ["service bay", "debris", "clutter", "barrels"],
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Bulkhead Curve 01.stl": {
+      "description": "Tall quarter-curved industrial wall, broad recessed panels, suited to framing a containment recess",
+      "tags": ["curved wall", "containment", "silhouette"],
+      "category": "wall",
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Bulkhead 24 (Doorway Closed).stl": {
+      "description": "Upright rectangular bulkhead with a closed round pressure door and raised hardware",
+      "tags": ["pressure door", "sealed", "round"],
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Bulkhead C (multilevel support).stl": {
+      "description": "Slim upright service wall with long inset panels and a vented lower corner",
+      "tags": ["wall", "service panel"],
+      "category": "wall",
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Hatch 01.stl": {
+      "description": "Round layered hatch with central handwheel, raised lip and hinge",
+      "tags": ["objective", "circular hatch", "handwheel"],
+      "visual_review": "reviewed"
+    },
+    "Flatline City Underground Tunnels/Tunnels - Rail.stl": {
+      "description": "Short waist-high rail with two long horizontal openings",
+      "tags": ["railing", "low barrier", "sight line"],
+      "visual_review": "reviewed"
+    },
+    "Scif Greebles 02/Console.stl": {
+      "description": "Flat-backed control panel with a large angled display and small key bank; not a freestanding console",
+      "tags": ["display", "keypad", "flat backed", "mount needed"],
+      "visual_review": "reviewed"
+    },
+    "Scif Greebles 02/Tank.stl": {
+      "description": "Low half-cylinder tank greeble with rounded end caps and a panelled top",
+      "tags": ["half cylinder", "reservoir", "flat backed"],
+      "visual_review": "reviewed"
+    },
+    "Scif Greebles 02/Pipes.stl": {
+      "description": "Long flat-backed bundle of parallel pipes held by repeated collars",
+      "tags": ["pipe bank", "parallel", "flat backed"],
+      "visual_review": "reviewed"
+    }
+  }
+}

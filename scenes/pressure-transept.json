@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "name": "Vark: the pressure transept (draft)",
+  "brief": "A forbidden process chamber reached through a narrow maintenance approach. A crescent of pressure architecture frames an ominous hatch; the cluttered service bay sits to one side rather than repeating props symmetrically.",
+  "catalog": "../build/library/catalog.json",
+  "art_direction": {
+    "status": "draft, not user-approved or print-approved",
+    "mood": "Oppressive industrial ritual, a laboratory repurposed as a shrine",
+    "focal_point": "The containment crescent and round pressure hatch at the far end of the approach",
+    "composition": "Native-size tunnel frames create an offset narrow approach, a broad chamber, and an asymmetric side bay. Keep the left approach and chamber foreground comparatively empty. Tall service panels and the curved bulkhead supply the silhouette.",
+    "alternatives": [
+      "The breach at the sump: an L-shaped approach and deliberately empty rift recess",
+      "The extraction gantry: overhead machinery and a low route, pending supported-stacking investigation"
+    ],
+    "missing_assets": [
+      "An original extraction-machine hero sculpt, not a primitive stand-in",
+      "A suitable victim or operator figure with appropriate rights",
+      "A separate original support for the flat console if a freestanding station is desired"
+    ],
+    "fit_notes": [
+      "Frames are approximately 80 mm modules, not official 50.8 mm E floors; do not rescale.",
+      "Trimesh processed/welded topology reports non-watertight meshes for Frame 2x1 A, Frame 2x1 D, and Bulkhead 24 (Doorway Closed). OpenSCAD exact Boolean rendering also reported open-mesh errors. These unchanged source files require slicer review; raw-surface previews do not certify them.",
+      "Visual draft only. Frame seams, curved-wall seating, standing areas and connectors need physical verification.",
+      "No purchased meshes are fused or modified; no combined production STL is exported."
+    ]
+  },
+  "placements": [
+    {
+      "id": "process-chamber",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Frame 2x2 A.stl",
+      "source_sha256": "829645f9742305bdf5af6eee32f145c68993b50b7e174e15bb8c6d01a876298a",
+      "position_mm": [0, 0, 0],
+      "rotation_deg": [0, 0, 0],
+      "role": "architecture"
+    },
+    {
+      "id": "offset-approach",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Frame 2x1 A.stl",
+      "source_sha256": "404eaa935034108337a6056a432e59d4a12e86d28fc56e4ddfd9558793035b77",
+      "position_mm": [-40, -160, 0],
+      "rotation_deg": [0, 0, 0],
+      "role": "approach"
+    },
+    {
+      "id": "cluttered-service-bay",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Frame 2x1 D.stl",
+      "source_sha256": "be8196fc4773279b7cad9d7c103516bab87b1a77bc2af0e0d0cb5487c1b926f6",
+      "position_mm": [120, 0, 0],
+      "rotation_deg": [0, 0, 0],
+      "role": "service"
+    },
+    {
+      "id": "containment-crescent",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Bulkhead Curve 01.stl",
+      "source_sha256": "52117cf61ed569e397173b7c33dd934278e1375f90b460c4dfb00535332742f3",
+      "position_mm": [27, 29, 10.2],
+      "rotation_deg": [0, 0, 0],
+      "role": "focal-frame"
+    },
+    {
+      "id": "pressure-objective",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Hatch 01.stl",
+      "source_sha256": "a84656ea425a60e308f353eb13c55e588032efe0819b49880afc1bb1001bd30b",
+      "position_mm": [22, 18, 10.2],
+      "rotation_deg": [0, 0, 25],
+      "role": "objective"
+    },
+    {
+      "id": "sealed-west-door",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Bulkhead 24 (Doorway Closed).stl",
+      "source_sha256": "307a70b44fd2118ff8a8bd985136a8fef6e34a58aa095d65891e130e84b83beb",
+      "position_mm": [-72, 40, 10.2],
+      "rotation_deg": [0, 0, 0],
+      "role": "architecture"
+    },
+    {
+      "id": "west-service-wall",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Bulkhead C (multilevel support).stl",
+      "source_sha256": "48c924acf4798b8011b5c94f697c9c2e3815caa8d87ba3a826ffa9cb2d93c351",
+      "position_mm": [-72, -40, 10.2],
+      "rotation_deg": [0, 0, 0],
+      "role": "architecture"
+    },
+    {
+      "id": "service-bay-rear-wall",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Bulkhead C (multilevel support).stl",
+      "source_sha256": "48c924acf4798b8011b5c94f697c9c2e3815caa8d87ba3a826ffa9cb2d93c351",
+      "position_mm": [120, 72, 10.2],
+      "rotation_deg": [0, 0, 90],
+      "role": "architecture"
+    },
+    {
+      "id": "front-chamber-rail",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Rail.stl",
+      "source_sha256": "774cb88a7ea2eada7d738c1efd5394f0d8e31ae13fd381933703f63a572d8ea2",
+      "position_mm": [40, -72, 10.2],
+      "rotation_deg": [0, 0, 90],
+      "role": "low-cover"
+    },
+    {
+      "id": "approach-west-rail",
+      "asset": "Flatline City Underground Tunnels/Tunnels - Rail.stl",
+      "source_sha256": "774cb88a7ea2eada7d738c1efd5394f0d8e31ae13fd381933703f63a572d8ea2",
+      "position_mm": [-72, -200, 10.2],
+      "rotation_deg": [0, 0, 0],
+      "role": "low-cover"
+    }
+  ]
+}
