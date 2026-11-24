@@ -43,13 +43,27 @@ def load_catalog(path):
 
 
 def source_path(catalog, asset):
-    root = Path(catalog["root"]).resolve()
+    if asset.get("library_status") == "custom_unindexed":
+        from terrain.custom import draft_asset
+
+        verified = draft_asset(asset["draft_manifest"])
+        if verified["sha256"] != asset["sha256"]:
+            raise ValueError(f"Custom source changed: {asset['id']}")
+        return Path(asset["draft_manifest"]).resolve().parent / "model.stl"
+    root = catalog_roots(catalog)[asset.get("root_key", "")]
     path = (root / asset["path"]).resolve()
     if not path.is_relative_to(root):
         raise ValueError(f"Asset path is outside library: {asset['path']}")
     if path.suffix.lower() not in FORMATS:
         raise ValueError(f"Unsupported model format: {path}")
     return path
+
+
+def catalog_roots(catalog):
+    return {
+        **({"": Path(catalog["root"]).resolve()} if catalog.get("root") else {}),
+        **{key: Path(value).resolve() for key, value in catalog.get("roots", {}).items()},
+    }
 
 
 def read_mesh(path):
@@ -135,11 +149,36 @@ def annotations_for(metadata, relative, collection):
     return result
 
 
-def index_library(root, destination, metadata_path=None):
+def index_library(
+    root, destination, metadata_path=None, additional_roots=None, primary_custom=False
+):
     root, destination = Path(root).resolve(), Path(destination).resolve()
     if not root.is_dir():
         raise ValueError(f"Library is not a directory: {root}")
     previous = load_catalog(destination) if destination.exists() else {}
+    primary_custom = primary_custom or (
+        previous.get("root") == str(root) and previous.get("primary_custom", False)
+    )
+    roots = dict(previous.get("roots", {})) if previous.get("root") == str(root) else {}
+    if previous.get("root") != str(root):
+        if previous.get("primary_custom"):
+            roots["custom"] = previous["root"]
+        elif "custom" in previous.get("roots", {}):
+            roots["custom"] = previous["roots"]["custom"]
+    roots.update(additional_roots or {})
+    if any(not re.fullmatch(r"[a-z][a-z0-9_-]*", key) for key in roots):
+        raise ValueError("Additional library roots need simple nonempty names")
+    roots = {key: str(Path(value).resolve()) for key, value in roots.items()}
+    all_roots = {"": root, **{key: Path(value) for key, value in roots.items()}}
+    if len(set(all_roots.values())) != len(all_roots) or any(
+        first.is_relative_to(second)
+        for key, first in all_roots.items()
+        for other, second in all_roots.items()
+        if key != other
+    ):
+        raise ValueError("Library roots must be separate, non-overlapping directories")
+    if any(not path.is_dir() for path in all_roots.values()):
+        raise ValueError("Additional library root is not a directory")
     if metadata_path is None and previous.get("root") == str(root):
         metadata_path = previous.get("metadata")
     if metadata_path and Path(metadata_path).resolve() == destination:
@@ -153,24 +192,51 @@ def index_library(root, destination, metadata_path=None):
         if previous.get("measurement_version") == 2
         else {}
     )
-    notices = license_notices(root)
+    notices_by_root = {key: license_notices(path) for key, path in all_roots.items()}
     assets = []
-    for path in sorted(root.rglob("*")):
+    candidates = [
+        (key, folder, path)
+        for key, folder in all_roots.items()
+        for path in sorted(folder.rglob("*"))
+    ]
+    for root_key, folder, path in candidates:
         if not path.is_file() or path.suffix.lower() not in FORMATS:
             continue  # Do not unpack ZIPs or execute anything supplied with a model.
-        if path.is_symlink() or not path.resolve().is_relative_to(root):
+        if path.is_symlink() or not path.resolve().is_relative_to(folder):
             continue
-        relative = path.relative_to(root).as_posix()
-        collection = Path(relative).parts[0] if "/" in relative else root.name
-        annotations = annotations_for(metadata, relative, collection)
+        # A broad reindex must never silently promote a draft or its preview cache.
+        if any(
+            (parent / "draft.json").is_file()
+            and read_json(parent / "draft.json").get("status") == "custom_unindexed"
+            for parent in (path.parent, *path.parent.parents)
+            if parent == folder or parent.is_relative_to(folder)
+        ):
+            continue
+        relative = path.relative_to(folder).as_posix()
+        prefix = root_key or ("custom" if primary_custom else "")
+        identity = f"{prefix}/{relative}" if prefix else relative
+        if not root_key and Path(relative).parts[0] in roots:
+            raise ValueError(f"Asset ID conflicts with additional library root: {relative}")
+        collection = Path(relative).parts[0] if "/" in relative else folder.name
+        annotations = annotations_for(metadata, identity, collection)
+        if root_key == "custom" or (not root_key and primary_custom):
+            provenance = read_json(path.parent / "provenance.json")
+            if (
+                provenance.get("status") != "approved"
+                or path.name != "model.stl"
+                or provenance.get("files", {}).get(path.name) != sha256(path)
+            ):
+                raise ValueError(f"Custom asset is not the approved source: {identity}")
+            annotations = {**provenance, **annotations, "license": provenance["license"]}
         license_info = {**UNKNOWN_LICENSE, **annotations.get("license", {})}
-        for parent, notice in notices:
+        for parent, notice in notices_by_root[root_key]:
             if path.is_relative_to(parent):
                 license_info.update(notice)
         asset = {
-            "id": relative,
+            "id": identity,
             "path": relative,
-            "name": re.sub(r"[_-]+", " ", path.stem),
+            **({"root_key": root_key} if root_key else {}),
+            "name": annotations.get("name", re.sub(r"[_-]+", " ", path.stem)),
             "collection": collection,
             "category": annotations.get("category", category_for(path.stem)),
             "description": annotations.get("description", ""),
@@ -185,10 +251,11 @@ def index_library(root, destination, metadata_path=None):
                 "connectors", {"system": "unknown", "status": "unverified"}
             ),
             "print_validation": "not_checked",
+            "library_status": "indexed",
         }
         try:
             asset["sha256"] = sha256(path)
-            cached = old.get(relative, {})
+            cached = old.get(identity, {})
             if cached.get("sha256") == asset["sha256"] and not cached.get("error"):
                 for key in ("bounds_mm", "extents_mm", "triangles", "native_units"):
                     asset[key] = cached[key]
@@ -207,6 +274,8 @@ def index_library(root, destination, metadata_path=None):
         "schema_version": 1,
         "measurement_version": 2,
         "root": str(root),
+        "roots": roots,
+        "primary_custom": primary_custom,
         "metadata": str(Path(metadata_path).resolve()) if metadata_path else None,
         "notes": [
             "Local/private catalog; no source files were changed or uploaded.",

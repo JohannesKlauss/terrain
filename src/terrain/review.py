@@ -48,6 +48,7 @@ def build_review(snapshot, output_dir):
                 "id": placement["id"],
                 "asset": identity,
                 "role": placement.get("role", "architecture"),
+                "library_status": asset.get("library_status", "indexed"),
                 "matrix": matrix.T.ravel().tolist(),
             }
         )
@@ -67,9 +68,32 @@ def build_review(snapshot, output_dir):
             f"<td>{escaped(item['asset'])}<small>{escaped(item['license']['name'])}</small></td>"
             f"<td>{item['required']}</td><td>{stock}</td><td>{remaining}</td></tr>"
         )
+    from terrain.custom import DRAFT_LABEL
+
+    custom_models = report.get("custom_models", [])
+    custom_section = ""
+    if custom_models:
+        custom_section = (
+            '<section class="custom-draft"><h2>Unindexed custom models</h2>'
+            f'<p class="draft-badge">{DRAFT_LABEL} (purple)</p>'
+            "<p>Excluded from the printing list. Discuss approval with your agent. "
+            "Nothing is added to assets until you explicitly approve this revision.</p><ul>"
+            + "".join(
+                f"<li><b>{escaped(item['name'])}</b> · {item['required']} draft copy/copies"
+                f"<p>Review SHA-256: <code>{escaped(item['review_sha256'])}</code></p></li>"
+                for item in custom_models
+            )
+            + "</ul></section>"
+        )
     parts = "".join(
         f'<label class="part"><input type="checkbox" checked data-piece="{i}">'
-        f"<span><b>{escaped(p['id'])}</b><small>{escaped(p['role'])}</small></span></label>"
+        f"<span><b>{escaped(p['id'])}</b><small>{escaped(p['role'])}</small>"
+        + (
+            f'<small class="draft-badge">{DRAFT_LABEL}</small>'
+            if p["library_status"] == "custom_unindexed"
+            else ""
+        )
+        + "</span></label>"
         for i, p in enumerate(instances)
     )
     previews = "".join(
@@ -93,6 +117,10 @@ def build_review(snapshot, output_dir):
         "dimensions": " × ".join(f"{n:.1f}" for n in report["extents_mm"]),
         "parts": parts,
         "rows": "".join(rows),
+        "custom_models": custom_section,
+        "draft_notice": (
+            f'<p class="draft-badge">Purple = {DRAFT_LABEL}</p>' if custom_models else ""
+        ),
         "previews": previews,
         "checks": "".join(f"<li>{escaped(w)}</li>" for w in checks),
         "encounter": escaped(json.dumps(scene.get("encounter", {}), indent=2, ensure_ascii=False)),

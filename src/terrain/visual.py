@@ -19,6 +19,19 @@ CAMERAS = {
 }
 
 
+def label_custom_preview(path, placement_ids):
+    from terrain.custom import DRAFT_LABEL
+
+    with Image.open(path) as source:
+        picture = source.convert("RGB")
+    draw = ImageDraw.Draw(picture)
+    font = ImageFont.load_default(size=18)
+    draw.rectangle((0, 0, picture.width, 70), fill="#f4eafa")
+    draw.text((16, 10), DRAFT_LABEL + " (purple)", fill="#74399b", font=font)
+    draw.text((16, 38), ", ".join(placement_ids)[:130], fill="#74399b", font=font)
+    picture.save(path)
+
+
 def preview_source(catalog, asset, cache_dir):
     path = source_path(catalog, asset)
     if sha256(path) != asset["sha256"]:

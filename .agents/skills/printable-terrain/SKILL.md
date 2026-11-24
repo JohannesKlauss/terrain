@@ -27,7 +27,62 @@ choosing a production direction and physical/print approval remain separate deci
 
 Store reviewed descriptions, visual-review status, tags and printed counts under `assets` in `library/saucermen.json`, keyed by source-relative asset ID; reindex to apply them. Never invent printed inventory, unit confirmation or connector measurements. Do not infer units from appearance.
 
-The available first-stage tools index STL/3MF, search annotated text, render contact sheets and assemble rigid-body scenes. They do **not** implement online downloading, automatic connector detection, Blender sculpting, model training or figure generation. Identify these as gaps rather than pretending they exist. New original work can share broad motifs, not reproduce restricted sculpts. Future online sourcing must track each model's actual license; free download does not imply remix rights. External 3D services need explicit permission before uploading private assets.
+The local tools index STL/3MF, search annotated text, render contact sheets, assemble
+rigid-body scenes, and run original Blender Python modelling scripts. Online downloading,
+automatic connector detection, model training and automatic figure generation remain gaps.
+New original work can share broad motifs, not reproduce restricted sculpts. Future online
+sourcing must track each model's actual license; free download does not imply remix rights.
+External 3D services need explicit permission before uploading private assets.
+
+## Original Blender models: draft → review → explicit approval
+
+Use Blender for original tiles, scenery and missing custom pieces. Keep purchased meshes
+immutable. Do not import restricted purchased geometry into a modelling script. For new
+OpenLOCK interfaces, the protected mechanical contract below still applies; a Blender
+mesh or a nominal tile size is not proof of connector compatibility.
+
+1. Write a trusted, local Blender Python script, using **one coordinate unit per mm**.
+   Create mesh objects in the scene. The runner starts empty, saves editable `model.blend`,
+   and exports evaluated mesh objects with modifiers and world transforms to `model.stl`.
+   It excludes render-hidden objects. Curves/text must be converted to meshes by the script.
+   See `examples/blender/stepped_plinth.py` for an original standalone fixture.
+2. Run `uv run terrain custom create drafts/<slug>-v1 --script <source.py> --name "<name>"
+   --brief "<intent>"`. Blender is auto-detected, including the macOS app; `--blender` can
+   select an executable. This runs local Python code, not a sandbox. Never run downloaded
+   or unreviewed scripts. Do not upload any assets. Drafts must stay outside `assets` and
+   indexed roots; broad indexing skips recognized unapproved draft directories.
+3. Open `drafts/<slug>-v1/preview/review.html` and inspect iso/top PNGs and `validation.json`.
+   Draft geometry is purple and marked **Custom · unindexed · approval pending** in the
+   interactive review and PNG previews. It is separate from printable library quantities.
+   To preview it in context: `terrain scene add-custom <scene.json> --draft
+   drafts/<slug>-v1/draft.json --id <piece-id> --at X Y Z`, then build/checkpoint normally.
+   `scene init` and `workshop init` support `--no-library` for custom-only scenes.
+4. Show the actual geometry and ask the user explicitly whether to add **this revision**
+   to the library. **Stop and wait.** A creation request, layout approval, successful render,
+   silence, or a previous model's approval is not permission to import a new custom model.
+   Never fabricate an approval note. The software records confirmation; it does not
+   authenticate who supplied it.
+5. Only after the user confirms, run `terrain custom approve <draft.json> --id <slug>
+   --review-sha256 <manifest-hash-shown-in-review> --approval "<user's confirmation>"`.
+   This validates the exact pinned sources, copies the Blender file, Python source and
+   STL into `assets/custom/<slug>/`, writes approval/license provenance, and indexes it.
+   It preserves the existing catalog's purchased root and metadata. Use `--catalog` when
+   working with a non-default catalog. Approved custom roots survive normal reindexing.
+6. For the next working scene revision, deliberately replace draft placements with the
+   returned indexed asset ID, retaining transforms and piece IDs. Remove unused
+   `custom_models` references from the working manifest. Never rewrite saved snapshots.
+   Historical drafts remain unindexed in their reviews; approval does not mutate them.
+
+To revise geometry, edit original Python source and create a **new** draft directory
+(`-v2`, etc.). Existing drafts and approved IDs are never overwritten. Keep draft sources
+so saved workshop revisions can be rebuilt. `terrain custom preview <draft.json>` rebuilds
+standalone reviews without modelling again. If rendering fails after modelling, the draft
+is retained and this command retries the preview.
+
+`drafts/` and `assets/custom/` are local and Git-ignored. Approval imports locally; it does
+not publish, upload, start printing, or certify slicer/physical fit. License defaults to
+original personal-use work with no redistribution; supply the actual license and
+attribution restrictions for any permitted derivative. Do not invent broader rights.
 
 ## Defaults
 

@@ -179,7 +179,8 @@
         if (hidden.has(index)) return;
         const geometry = geometries.get(instance.asset);
         gl.bindVertexArray(geometry.vao);
-        gl.uniform3fv(uniforms.color, palette(instance.role));
+        gl.uniform3fv(uniforms.color, instance.library_status === "custom_unindexed"
+          ? [0.78, 0.48, 0.91] : palette(instance.role));
         gl.uniformMatrix4fv(uniforms.model, false, new Float32Array(instance.matrix));
         gl.drawElements(gl.TRIANGLES, geometry.count, gl.UNSIGNED_INT, 0);
       });

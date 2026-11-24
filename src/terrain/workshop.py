@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from terrain.library import read_json, sha256, write_json
+from terrain.library import catalog_roots, read_json, sha256, write_json
 from terrain.review import build_review, write_history
 from terrain.scene import assemble_scene, init_scene, resolve_placements, scene_catalog
 
@@ -91,11 +91,13 @@ def prepare_output(path, output, scenes):
     inputs = [path]
     for source, scene in scenes:
         catalog = scene_catalog(source, scene)
+        inputs.extend(catalog_roots(catalog).values())
+        if scene.get("catalog"):
+            inputs.append((source.parent / scene["catalog"]).resolve())
         inputs.extend(
-            [
-                Path(catalog["root"]).resolve(),
-                (source.parent / scene["catalog"]).resolve(),
-            ]
+            Path(asset["draft_manifest"]).resolve().parent
+            for asset in catalog["assets"]
+            if asset.get("draft_manifest")
         )
         if catalog.get("metadata"):
             inputs.append(Path(catalog["metadata"]).resolve())
@@ -175,7 +177,13 @@ def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad
         folder.mkdir(exist_ok=True)
         snapshot = folder / f"{number:04}.json"
         draft = copy.deepcopy(scene)
-        draft["catalog"] = os.path.relpath((path / scene["catalog"]).resolve(), folder)
+        if scene.get("catalog"):
+            draft["catalog"] = os.path.relpath((path / scene["catalog"]).resolve(), folder)
+        if scene.get("custom_models"):
+            draft["custom_models"] = {
+                identity: os.path.relpath((path / reference).resolve(), folder)
+                for identity, reference in scene["custom_models"].items()
+            }
         draft["iteration"] = {
             "number": number,
             "title": title,
