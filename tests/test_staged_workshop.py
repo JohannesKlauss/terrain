@@ -29,7 +29,9 @@ def test_resume_and_discovery_without_catalog(tmp_path, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["workshops"] == ["scenes/first", "scenes/second"]
     result = subprocess.run(
         [str(Path(sys.executable).parent / "terrain"), "workshop", "status", str(first)],
-        text=True, capture_output=True, check=True,
+        text=True,
+        capture_output=True,
+        check=True,
     )
     loaded = json.loads(result.stdout)
     for key in ("confirmed_facts", "assumptions", "open_questions", "pending_decision"):
@@ -56,16 +58,27 @@ def test_staged_operations_fail_before_tools_or_output(tmp_path, monkeypatch, da
         state["workshop_id" if damage == "wrong" else "stage"] = "other"
         state_path.write_text(json.dumps(state))
     damaged = state_path.read_bytes() if state_path.exists() else None
+
     def forbidden(*args, **kwargs):
         pytest.fail("guard invoked a prohibited tool")
+
     monkeypatch.setattr("terrain.scene.scene_catalog", forbidden)
     monkeypatch.setattr("terrain.scene.render_source", forbidden)
     monkeypatch.setattr("terrain.custom.draft_asset", forbidden)
     output = tmp_path / "output"
     scene = str(path / "scene.json")
     commands = [
-        ["workshop", "checkpoint", str(path), "--output-dir", str(output),
-         "--title", "T", "--changes", "C"],
+        [
+            "workshop",
+            "checkpoint",
+            str(path),
+            "--output-dir",
+            str(output),
+            "--title",
+            "T",
+            "--changes",
+            "C",
+        ],
         ["workshop", "review", str(path), "--output-dir", str(output)],
         ["scene", "add", scene, "--asset", "x", "--id", "x", "--at", "0", "0", "0"],
         ["scene", "add-custom", scene, "--draft", "x", "--id", "x", "--at", "0", "0", "0"],
@@ -87,8 +100,10 @@ def test_lock_and_interrupted_atomic_write(tmp_path, monkeypatch):
     state = json.loads(original)
     with workshop_lock(path, state_update=True), pytest.raises(ValueError, match="locked"):
         update_workshop_state(path, state, state)
+
     def fail(*args):
         raise OSError("interrupted")
+
     monkeypatch.setattr(os, "replace", fail)
     with pytest.raises(OSError, match="interrupted"):
         atomic_state(path, state)

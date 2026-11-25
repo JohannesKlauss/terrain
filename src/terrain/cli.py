@@ -136,6 +136,16 @@ def create_parser():
         gate.add_argument("--revision", type=int, required=True)
         gate.add_argument("--sha256", required=True)
         gate.add_argument("--confirmation", required=True)
+    handoff = workshop_commands.add_parser("handoff")
+    handoff.add_argument("path", type=Path)
+    handoff.add_argument("--output-dir", type=Path, required=True)
+    handoff.add_argument("--revision", type=int, required=True)
+    handoff.add_argument("--sha256", required=True)
+    handoff.add_argument("--evidence", type=Path)
+    handoff.add_argument("--openscad", default="openscad")
+    verify = workshop_commands.add_parser("verify-handoff")
+    verify.add_argument("path", type=Path)
+    verify.add_argument("--pack", type=Path, required=True)
     for action in ("checkpoint", "review"):
         sub = workshop_commands.add_parser(action)
         sub.add_argument("path", type=Path)
@@ -286,6 +296,16 @@ def run_workshop(args):
             args.action.removeprefix("finished-"),
             args.confirmation,
         )
+    elif args.action == "handoff":
+        from terrain.handoff import handoff
+
+        result = handoff(
+            args.path, args.output_dir, args.revision, args.sha256, args.evidence, args.openscad
+        )
+    elif args.action == "verify-handoff":
+        from terrain.handoff import verify_handoff
+
+        result = verify_handoff(args.path, args.pack)
     else:
         output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
         if args.action == "checkpoint":

@@ -1,5 +1,57 @@
 # Staged workshop and 2D contract
 
+## Exact-board handoff and release evidence
+
+After both finished gates, run `terrain workshop handoff <workshop> --revision N
+--sha256 <snapshot-digest> --output-dir <private-empty-directory>`. The command
+rechecks the current 2D layout, rough acceptance, sample, both exact finished
+confirmations and history, current play evidence, and source bytes before rendering.
+It writes a new `handoff-NNNN` directory, never overwrites an existing pack, and does
+not advance a stage. `verify-handoff <workshop> --pack <directory>` rechecks the
+board, approvals, sources, release evidence and pack hashes. A stale or copied pack is
+not valid for another workshop or finished board.
+
+The labelled top and oblique views and keyed assembly list come from `assemble_scene`.
+`scene.json` may contain a `handoff` object with known handedness, removable components,
+connector instructions, assembly notes and nonprinted components. Missing information
+is reported as unknown, never inferred. The assembly lists feature heights, gaps and
+outside sourcing separately. `print-table.csv` reports exact local source, optional
+`source_url` metadata, source hash, measured dimensions, assumed/confirmed units,
+license, required count, physical stock and outstanding count. Unknown stock remains
+blank, not zero. Unapproved custom drafts, unknown-license assets and proxies appear in
+exclusions, not printable stock. Previews and reports are private.
+
+`release-checklist.md` and `.json` distinguish separate rights/units, miniature
+clearance, stability, interfaces, slicer/profile and physical-test checks. OpenLOCK
+connector metadata additionally requires coupon and representative-assembly checks
+described in the README. No evidence is inferred from previews or a filename. The
+default is pending, for slicing and verification, not ready to print. If genuine
+pre-existing evidence exists, pass `--evidence /absolute/path/to/evidence.json`:
+
+```json
+{
+  "schema_version": 1,
+  "workshop_id": "<id from workshop status>",
+  "snapshot_sha256": "<finished snapshot digest>",
+  "checks": {
+    "slicer_profile": {
+      "status": "verified",
+      "note": "Describe who reviewed the layers, bed and material profile",
+      "evidence": [{"path": "/absolute/path/to/local-evidence", "sha256": "<file digest>"}]
+    }
+  }
+}
+```
+
+Other check keys are `rights_units`, `miniature_clearance`, `stability`, `interfaces`,
+`physical_tests`, `openlock_coupon`, and `openlock_assembly`. Omitted checks remain
+pending (OpenLOCK checks are not applicable only when every connector system is known
+and none is OpenLOCK). Each verified check needs a descriptive note and at least one existing
+local file with its exact SHA-256. Evidence is linked, not copied or uploaded; changing
+it invalidates verification. The program verifies the record and file bytes, not the
+truth of an externally performed test. Even a complete checklist does not itself
+authorize production, purchasing, printing or heater control.
+
 ## Sample and finished-board decisions
 
 After accepting the exact rough checkpoint, build one local sample from three existing,
