@@ -12,6 +12,14 @@ from pathlib import Path
 from terrain.library import catalog_roots, read_json, sha256, write_json
 from terrain.review import build_review, write_history
 from terrain.scene import assemble_scene, init_scene, resolve_placements, scene_catalog
+from terrain.staged import (
+    MARKER,
+    atomic_state,
+    guard_workshop,
+    new_state,
+    read_state,
+    validate_state,
+)
 
 VIEWS = ("iso", "reverse", "top", "front")
 DESIGN_NOTES = """# Encounter design journal
@@ -34,10 +42,19 @@ Discuss the defining scene, antagonist, player choices, and table constraints.
 
 def init_workshop(path, catalog, name, brief):
     path = Path(path).resolve()
-    if any((path / filename).exists() for filename in ("scene.json", "design.md", "revisions")):
-        raise ValueError(f"Workshop already exists: {path}")
-    init_scene(path / "scene.json", catalog, name, brief)
+    if not name.strip() or not brief.strip():
+        raise ValueError("A workshop needs a name and brief")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir()
+    except FileExistsError as error:
+        raise ValueError(f"Workshop already exists: {path}") from error
+    state = new_state(path, name, brief)
+    write_json(path / MARKER, {"schema_version": 1, "workshop_id": state["workshop_id"]})
+    init_scene(path / "scene.json", None, name, brief)
     scene = read_json(path / "scene.json")
+    scene["catalog"] = os.path.relpath(Path(catalog).resolve(), path) if catalog else None
+    scene["staged_workshop"] = state["workshop_id"]
     scene["encounter"] = {
         "context": "",
         "villains": [],
@@ -51,7 +68,24 @@ def init_workshop(path, catalog, name, brief):
     }
     write_json(path / "scene.json", scene)
     (path / "design.md").write_text(DESIGN_NOTES.format(brief=brief))
-    return {"workshop": path, "scene": path / "scene.json", "journal": path / "design.md"}
+    atomic_state(path, state)
+    return {"workshop": path, "scene": path / "scene.json", "journal": path / "design.md",
+            "state": path / "workshop-state.json"}
+
+
+def workshop_status(path=None):
+    if path is None:
+        scenes = Path("scenes")
+        candidates = sorted(p for p in scenes.iterdir() if p.is_dir() and (
+            (p / MARKER).exists() or (p / "workshop-state.json").exists()
+            or ((p / "scene.json").exists() and (p / "design.md").exists())
+        )) if scenes.is_dir() else []
+        return {"workshops": [str(p) for p in candidates]}
+    path = Path(path).resolve()
+    state = read_state(path)
+    if read_json(path / "scene.json").get("staged_workshop") != state["workshop_id"]:
+        raise ValueError("Staged scene belongs to a different workshop or is missing its marker")
+    return {"workshop": str(path), **state}
 
 
 def revisions(path):
@@ -69,7 +103,8 @@ def revisions(path):
 
 
 @contextmanager
-def workshop_lock(path):
+def workshop_lock(path, *, state_update=False):
+    path = Path(path).resolve()
     if not (path / "scene.json").is_file() or not (path / "design.md").is_file():
         raise ValueError(f"Not a workshop: {path}")
     lock = path / ".checkpoint-lock"
@@ -81,9 +116,27 @@ def workshop_lock(path):
             "confirm it has stopped before removing this empty lock directory."
         ) from error
     try:
+        if not state_update:
+            guard_workshop(path)
         yield
     finally:
         lock.rmdir()
+
+
+def update_workshop_state(path, expected, updated):
+    """Commit an intake update only if its caller read the current state."""
+    path = Path(path).resolve()
+    with workshop_lock(path, state_update=True):
+        current = read_state(path)
+        if current != expected:
+            raise ValueError("Workshop state changed; reload before updating")
+        validate_state(path, read_json(path / MARKER), updated)
+        if any(updated[k] != current[k] for k in ("schema_version", "workshop_id", "slug")):
+            raise ValueError("Workshop identity cannot change")
+        if read_json(path / "scene.json").get("staged_workshop") != current["workshop_id"]:
+            raise ValueError("Staged scene belongs to a different workshop")
+        atomic_state(path, updated)
+    return updated
 
 
 def prepare_output(path, output, scenes):
