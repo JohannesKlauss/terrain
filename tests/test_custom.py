@@ -12,6 +12,15 @@ from terrain.scene import add_custom_placement, assemble_scene, init_scene
 from terrain.workshop import checkpoint, init_workshop, review_workshop
 
 
+def init_legacy_workshop(path, catalog, name, brief):
+    init_workshop(path, catalog, name, brief)
+    (path / ".terrain-staged.json").unlink()
+    (path / "workshop-state.json").unlink()
+    scene = json.loads((path / "scene.json").read_text())
+    del scene["staged_workshop"]
+    write_json(path / "scene.json", scene)
+
+
 @pytest.fixture
 def draft(tmp_path):
     path = tmp_path / "drafts" / "altar-v1"
@@ -62,7 +71,7 @@ def quick_previews(monkeypatch):
 
 def test_unindexed_draft_in_scene_and_saved_review(draft, catalog, tmp_path, quick_previews):
     workshop = tmp_path / "workshop"
-    init_workshop(workshop, catalog, "Shrine", "An original focal point")
+    init_legacy_workshop(workshop, catalog, "Shrine", "An original focal point")
     add_custom_placement(workshop / "scene.json", draft, "altar", [0, 0, 0])
     result = checkpoint(workshop, tmp_path / "review", "Draft", "Add custom altar")
     report = json.loads((result["review"].parent / "report.json").read_text())
@@ -222,7 +231,7 @@ def test_approved_model_is_placeable_without_changing_historical_drafts(
     from terrain.scene import add_placement
 
     workshop = tmp_path / "workshop"
-    init_workshop(workshop, catalog, "Shrine", "Original focus")
+    init_legacy_workshop(workshop, catalog, "Shrine", "Original focus")
     add_custom_placement(workshop / "scene.json", draft, "altar", [0, 0, 0])
     first = checkpoint(workshop, tmp_path / "review", "Draft", "Unindexed altar")
     frozen = first["snapshot"].read_bytes()

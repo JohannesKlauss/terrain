@@ -11,7 +11,7 @@ from terrain.library import index_library, load_catalog, search_assets
 from terrain.mesh import MeshRules, inspect_mesh
 from terrain.scene import add_custom_placement, add_placement, assemble_scene, init_scene
 from terrain.visual import preview_library
-from terrain.workshop import checkpoint, init_workshop, review_workshop
+from terrain.workshop import checkpoint, init_workshop, review_workshop, workshop_status
 
 DEFAULT_CATALOG = ROOT / "build" / "library" / "catalog.json"
 
@@ -86,6 +86,8 @@ def create_parser():
     start.add_argument("--name", required=True)
     start.add_argument("--brief", required=True)
     start.add_argument("--no-library", action="store_true", help="Start with custom drafts only")
+    status = workshop_commands.add_parser("status", help="Discover or resume staged workshops")
+    status.add_argument("path", nargs="?", type=Path)
     for action in ("checkpoint", "review"):
         sub = workshop_commands.add_parser(action)
         sub.add_argument("path", type=Path)
@@ -201,6 +203,8 @@ def run_workshop(args):
         result = init_workshop(
             args.path, None if args.no_library else args.catalog, args.name, args.brief
         )
+    elif args.action == "status":
+        result = workshop_status(args.path)
     else:
         output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
         if args.action == "checkpoint":

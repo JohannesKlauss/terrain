@@ -9,8 +9,9 @@ Work from the repository root. Default to designing scenes from the user's actua
 
 For discussion-driven encounter design, short adaptive interviews, saved visual iterations,
 and interactive local review, also read `.agents/skills/terrain-workshop/SKILL.md`.
-That workflow permits freely drafted compositions followed by a pause for visual feedback;
-choosing a production direction and physical/print approval remain separate decisions.
+For a staged workshop, do not invoke mesh preview, rendering, generation or modelling
+tools before the explicit 2D layout approval gate. Standalone scenes retain the workflow
+below. Production direction and physical/print approval remain separate decisions.
 
 ## Library-first scene workflow (default)
 

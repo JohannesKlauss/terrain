@@ -7,8 +7,8 @@ description: Interview the user about a pen-and-paper encounter, turn story and 
 
 Be a collaborative encounter designer, not a questionnaire followed by a final render.
 Use a research → plan → implement → validate loop, then return to the conversation.
-**Default: draft freely and pause for visual feedback.** Layout drafts are reversible.
-Do not demand approval of every plan. Never treat a draft, a successful render, or silence
+Staged workshops must first obtain explicit approval of an exact 2D layout revision.
+Never treat a draft, a successful render, or silence
 as artistic, print, or physical-fit approval.
 
 Read `.agents/skills/printable-terrain/SKILL.md` and follow its library, licensing,
@@ -17,10 +17,12 @@ capability; it does not replace its modelling and approval gates.
 
 ## 1. Resume before interviewing
 
-Look for the user's workshop in `scenes/<slug>/`. Read `design.md`, `scene.json`, and
-the latest `revisions/NNNN.json`, including its `iteration.feedback`. Ask which workshop
+Run `terrain workshop status` to discover staged workshops, then
+`terrain workshop status scenes/<slug>` to resume the exact pending decision. Ask which workshop
 only if more than one is plausible. Do not restart answered questions or invent a prior
 conversation. Summarize the current intent and the most important unresolved decision.
+Read the persisted state rather than inferring approval from the journal. `workshop review`
+is only for existing 3D history, not discovery or resume.
 
 For a new project, start with the imagined playable moment: what do the players discover,
 who opposes them, and what should make this encounter memorable? Use the user's words.
@@ -51,7 +53,7 @@ Do not ask for game statistics that do not change the terrain. Do not require th
 to invent villain lore before showing anything. Unknown story details can stay open;
 unknown dimensions that determine fit must be asked or explicitly marked provisional.
 
-For missing assets, index the existing collection if needed, search targeted candidates,
+After the 2D gate is implemented and explicitly approved, for missing assets, index the existing collection if needed, search targeted candidates,
 render actual mesh contact sheets, **open those sheets**, and inspect the chosen shapes.
 Filename/category matches are not visual review. Never upload the private collection.
 
@@ -74,8 +76,7 @@ encounter to have two routes or the same cover pattern if its fiction calls for 
 trade-off. Explain intentional choke points and any resulting dead ends.
 
 For the first composition, briefly describe three genuinely different directions.
-You may implement a labelled recommended draft immediately so the user has something
-concrete to critique. Save unchosen directions in `art_direction.alternatives`.
+Do not implement a 3D draft before explicit approval of the exact 2D layout revision.
 Prioritize the distinctive focal silhouette and playable negative space over scatter.
 Missing hero sculpts remain explicit gaps, not crude blocks presented as finished art.
 When an original custom piece is needed, use the printable-terrain Blender draft workflow.
@@ -94,9 +95,18 @@ uv run terrain workshop init scenes/<slug> --name "<name>" --brief "<current int
 ```
 
 Add `--catalog /absolute/path/catalog.json` when not using the default index.
+Initialization does not validate the catalog or invoke a renderer or model tool.
+Until the 2D approval workflow exists, stop before 3D work. Do not call standalone
+`library preview`, `custom create`, `custom preview`, `generate`, mesh tools, or other
+model/render tools on behalf of a staged workshop before its 2D gate is approved.
 The agent edits the files; the user need not manipulate JSON.
+Record each answer in the state through `terrain.workshop.update_workshop_state` as
+documented in `docs/workshop-state.md`, preserving the exact next decision. Do not
+edit the state file directly.
 
 - `scene.json`: current editable scene, pinned assets and structured encounter intent.
+- `workshop-state.json`: versioned authoritative resume and gate state; see
+  `docs/workshop-state.md`. Never infer confirmation from `design.md` or legacy history.
 - `design.md`: living discussion journal, confirmed choices, assumptions, open questions,
   feedback and next step. Record meaningful user answers and their spatial consequences.
 - `revisions/NNNN.json`: immutable source snapshots created by checkpoints. Each records

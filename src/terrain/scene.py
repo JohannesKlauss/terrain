@@ -10,6 +10,7 @@ import numpy as np
 import trimesh
 
 from terrain.library import catalog_roots, load_catalog, read_json, sha256, source_path, write_json
+from terrain.staged import guard_scene
 from terrain.visual import CAMERAS, label_custom_preview, preview_source, render_source
 
 
@@ -102,6 +103,7 @@ def placement_matrix(placement, asset):
 
 
 def add_placement(path, asset_id, placement_id, position, rotation=(0, 0, 0), role="architecture"):
+    guard_scene(path)
     scene = read_json(path)
     catalog = scene_catalog(path, scene)
     if any(p["id"] == placement_id for p in scene["placements"]):
@@ -128,6 +130,8 @@ def add_custom_placement(
     path, manifest, placement_id, position, rotation=(0, 0, 0), role="architecture"
 ):
     from terrain.custom import draft_asset
+
+    guard_scene(path)
 
     path, manifest = Path(path).resolve(), Path(manifest).resolve()
     asset = draft_asset(manifest)
@@ -196,6 +200,7 @@ def resolve_placements(path):
 
 
 def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=("iso", "top")):
+    guard_scene(path)
     if not views or any(view not in CAMERAS for view in views):
         raise ValueError(f"Unknown scene preview views: {views}")
     scene, catalog, resolved = resolve_placements(path)

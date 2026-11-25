@@ -24,6 +24,12 @@ def workshop(tmp_path):
     index_library(models, catalog)
     path = tmp_path / "encounter"
     init_workshop(path, catalog, "The pressure chapel", "A villain's ritual laboratory")
+    # Exercise the pre-staging workshop format separately.
+    (path / ".terrain-staged.json").unlink()
+    (path / "workshop-state.json").unlink()
+    scene = json.loads((path / "scene.json").read_text())
+    del scene["staged_workshop"]
+    (path / "scene.json").write_text(json.dumps(scene))
     add_placement(path / "scene.json", "wall.stl", "west-wall", [0, 0, 0])
     return path, tmp_path / "review", models, catalog
 
@@ -158,7 +164,7 @@ def test_init_and_empty_review_via_cli(workshop, tmp_path, capsys):
     )
     assert (path / "scene.json").read_bytes() == original
     assert main(["workshop", "review", str(path)]) == 1
-    assert "no saved iterations" in capsys.readouterr().err
+    assert "approved 2D layout" in capsys.readouterr().err
 
 
 def test_rebuilt_history_preserves_stock_recorded_at_each_checkpoint(
