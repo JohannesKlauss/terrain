@@ -75,3 +75,77 @@ fields only. The API takes the workshop lock and compares the expected prior sta
 cannot change the gate or identity. Do not directly edit state. Unknown versions,
 missing files and identity mismatches fail closed. State and its staged markers must
 not be deleted to bypass recovery. Standalone scene tools remain independent.
+
+## Rough 3D and sample review
+
+Once the exact current 2D option is approved, search the owned catalog and inspect real
+local contact sheets before choosing parts. Keep sources intact, pin their hashes and use
+rigid transforms. Add `height_mm` to each 2D height and stairs feature before approval;
+it is the intended top elevation in millimetres. Missing heights remain unresolved, not
+an implicit zero. A height change beyond the stated tolerance requires a new 2D revision.
+
+Place pieces in `scene.json` and supply a `rough` object there. The agent manages this;
+it is not a new user-facing questionnaire. Example:
+
+```json
+{
+  "bindings": {"cover": "cover-piece", "altar": "altar-piece",
+               "dais": "dais-piece", "steps": "steps-piece"},
+  "tolerance_mm": 1,
+  "clearance_height_mm": 30,
+  "proxies": ["cover-piece"],
+  "occupied_bases": [{"at": [100, 110], "diameter_mm": 25}],
+  "gaps": [],
+  "sourcing": [],
+  "physical_unknowns": ["Hand access, material fit and stair traversal"]
+}
+```
+
+Bindings map approved 2D feature IDs to actual placement IDs. Check all key cover,
+interaction, height and stairs features; missing bindings stay unresolved. For each
+blocking gap record `role`, `envelope_interface`, `quantity`, `substitutes`,
+`decision_deadline` and `status`. For each read-only sourcing candidate record
+`vendor_link`, `price_date`, `contents`, `size_interface_evidence`, `license`, `unknowns`,
+`recommendation` and `fallback`. Candidates are not owned or fit-confirmed. Do not buy,
+download, import, remodel restricted assets or upload private geometry without permission.
+Proxy IDs identify placements that stand in for unresolved pieces, not stock or visual
+proof. Confirmed printed quantities come only from inventory annotations; null is
+unknown, zero is confirmed zero, and shortfall is computed only for known quantities.
+
+`terrain workshop checkpoint` uses actual transformed source triangles to project each
+placement to XY and test a swept base along the approved routes. The route result is
+conservative: any intersecting projection is a possible blocker, even when part of the
+mesh is above the clearance band. The report records the base size, clearance band,
+tolerance, optional occupied-base intersections and feature world bounds. It does not
+prove exact collisions, occlusion, stair function, hand access, sight lines, physical fit
+or visual quality. AABB overlaps are broad-phase warnings, not collision evidence.
+The interaction check reports the nearest projected obstacle and clearance after
+subtracting the expected base radius, including the explicitly positioned occupied
+bases. Cover/reveal checks list XY projections crossing an entry-to-feature line; these
+are not 3D line-of-sight judgments. Human hand size and vertical access remain unknown.
+Inspect the private labelled top and iso views, and explain unknowns to the GM.
+`report.json`, `assembly.md` and `print-list.csv` are internal feasibility artifacts;
+the local review summarizes their evidence, not a release verdict.
+
+A placement outside its approved feature envelope, a changed approved height, a
+previously clear route obstructed by mesh projection, or an exceeded outer footprint
+invalidates 2D approval and records the difference. Further staged rough operations
+are blocked until a *new* 2D revision is approved. Discuss the smallest viable change,
+including when a conservative projection needs closer physical inspection. Source
+changes, placement changes, and new snapshots invalidate their old rough acceptance.
+Failed renders leave the prior committed snapshot and pending decision intact.
+
+Only after reviewing the exact current rough snapshot and resolving blocking gaps ask
+for the user's unconditional statement `I accept rough revision N for sample review`.
+If supplied, record it using:
+
+```bash
+uv run terrain workshop accept-rough scenes/<slug> --revision N --sha256 <snapshot-sha256> \
+  --confirmation "I accept rough revision N for sample review"
+uv run terrain workshop sample-review scenes/<slug>
+```
+
+The second command checks whether sample review is unlocked; it does not create samples,
+approve appearance, approve printing, or release a design. Both commands recheck the
+current snapshot, scene bytes and source hashes. Approval records a statement, not the
+identity of its author. Rebuilt or old review files never constitute acceptance.

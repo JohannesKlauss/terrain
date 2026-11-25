@@ -10,7 +10,7 @@ import numpy as np
 import trimesh
 
 from terrain.library import catalog_roots, load_catalog, read_json, sha256, source_path, write_json
-from terrain.staged import guard_scene, scene_operation
+from terrain.staged import guard_scene, scene_operation, staged_root
 from terrain.visual import CAMERAS, label_custom_preview, preview_source, render_source
 
 
@@ -204,6 +204,8 @@ def resolve_placements(path):
 @scene_operation
 def assemble_scene(path, output_dir, preview=False, openscad="openscad", views=("iso", "top")):
     guard_scene(path)
+    if staged_root(path) is not None and not isinstance(read_json(path).get("rough"), dict):
+        raise ValueError("Staged scene requires a rough specification before building")
     if not views or any(view not in CAMERAS for view in views):
         raise ValueError(f"Unknown scene preview views: {views}")
     scene, catalog, resolved = resolve_placements(path)

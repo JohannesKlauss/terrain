@@ -12,10 +12,12 @@ from terrain.mesh import MeshRules, inspect_mesh
 from terrain.scene import add_custom_placement, add_placement, assemble_scene, init_scene
 from terrain.visual import preview_library
 from terrain.workshop import (
+    accept_rough,
     approve_layout,
     checkpoint,
     init_workshop,
     review_workshop,
+    sample_review_status,
     save_layout,
     workshop_status,
 )
@@ -104,6 +106,13 @@ def create_parser():
     approve.add_argument("--revision", type=int, required=True)
     approve.add_argument("--sha256", required=True)
     approve.add_argument("--confirmation", required=True)
+    accept = workshop_commands.add_parser("accept-rough")
+    accept.add_argument("path", type=Path)
+    accept.add_argument("--revision", type=int, required=True)
+    accept.add_argument("--sha256", required=True)
+    accept.add_argument("--confirmation", required=True)
+    sample = workshop_commands.add_parser("sample-review")
+    sample.add_argument("path", type=Path)
     for action in ("checkpoint", "review"):
         sub = workshop_commands.add_parser(action)
         sub.add_argument("path", type=Path)
@@ -225,6 +234,10 @@ def run_workshop(args):
         result = save_layout(args.path, read_json(args.plan), args.expect_revision)
     elif args.action == "approve-layout":
         result = approve_layout(args.path, args.revision, args.sha256, args.confirmation)
+    elif args.action == "accept-rough":
+        result = accept_rough(args.path, args.revision, args.sha256, args.confirmation)
+    elif args.action == "sample-review":
+        result = sample_review_status(args.path)
     else:
         output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
         if args.action == "checkpoint":

@@ -48,8 +48,9 @@
       <span id="feedback-status" role="status"></span>
     </section>
     $custom_models
+    $rough_evidence
     <section id="print-list">
-      <div class="section-title"><h2>Printing list</h2><a href="print-list.csv" download>Download CSV</a></div>
+      <div class="section-title"><h2>Printing list</h2>$csv_link</div>
       <p class="muted">Print unchanged original files. Required = copies in this iteration. Unknown stock is not zero. Reindex confirmed printed counts before the next checkpoint. This is a parts list, not slicer or print approval.</p>
       <div class="table-wrap"><table>
         <thead><tr><th>Original asset / license</th><th>Required</th><th>Printed</th><th>To print</th></tr></thead>
@@ -60,7 +61,7 @@
     <details><summary>Encounter brief</summary><pre>$encounter</pre></details>
     <details><summary>Art direction and missing assets</summary><pre>$art_direction</pre></details>
     <details><summary>Design journal at this iteration</summary><pre>$journal</pre></details>
-    <details><summary>Unresolved checks</summary><ul>$checks</ul><a href="report.json">Full report</a> · <a href="assembly.md">Assembly instructions</a></details>
+    <details><summary>Unresolved checks</summary><ul>$checks</ul>$internal_artifacts</details>
     <footer>PRIVATE LOCAL PREVIEW · Original meshes remain intact · Do not upload or redistribute this page or its geometry.</footer>
   </main>
   <script type="application/json" id="scene-data">$data</script>

@@ -9,7 +9,7 @@ from functools import wraps
 from pathlib import Path
 
 from terrain.layout import verify_revision
-from terrain.library import read_json
+from terrain.library import read_json, sha256
 
 MARKER = ".terrain-staged.json"
 STATE = "workshop-state.json"
@@ -79,21 +79,20 @@ def validate_state(path, marker, state):
         )
         or not isinstance(state.get("revisions"), dict)
         or set(state["revisions"]) != {"layout", "scene"}
-        or state["revisions"]["scene"] is not None
         or not isinstance(state.get("gate_evidence"), list)
     ):
         raise ValueError(f"Invalid or unsupported staged workshop state: {path}")
     reference = state["revisions"]["layout"]
     evidence = state["gate_evidence"]
     if state["stage"] == "intake":
-        if reference is not None or evidence:
+        if reference is not None or evidence or state["revisions"]["scene"] is not None:
             raise ValueError("Intake state cannot contain layout approval")
         return
     record = verify_revision(path, reference)
     if record.get("workshop_id") != state["workshop_id"]:
         raise ValueError("Layout belongs to a different workshop")
     if state["stage"] == "layout_review":
-        if evidence:
+        if evidence or state["revisions"]["scene"] is not None:
             raise ValueError("Pending layout cannot carry approval")
         return
     option = record["plan"].get("selected_option")
@@ -106,7 +105,7 @@ def validate_state(path, marker, state):
         "option": option,
         "confirmation": f"I approve 2D revision {reference['number']} option {option} for 3D",
     }
-    if not option or evidence != [expected] or option not in record["checks"]:
+    if not option or not evidence or evidence[0] != expected or option not in record["checks"]:
         raise ValueError("Missing or stale explicit layout approval")
     checks = record["checks"][option]
     if checks["footprint"] != "fits" or any(
@@ -115,6 +114,35 @@ def validate_state(path, marker, state):
         raise ValueError("Approved layout has unchecked footprint or interactions")
     if not any(r["status"] != "blocked" and r["from_entry"] for r in checks["routes"]):
         raise ValueError("Approved layout has no usable route")
+    rough = state["revisions"]["scene"]
+    if rough is None:
+        if len(evidence) != 1:
+            raise ValueError("Rough acceptance has no current snapshot")
+        return
+    if (
+        not isinstance(rough, dict)
+        or set(rough) != {"number", "sha256", "working_sha256", "layout_sha256"}
+        or type(rough["number"]) is not int
+        or rough["number"] < 1
+    ):
+        raise ValueError("Invalid rough snapshot reference")
+    if rough["layout_sha256"] != reference["sha256"]:
+        raise ValueError("Rough snapshot belongs to another 2D revision")
+    snapshot = path / "revisions" / f"{rough['number']:04}.json"
+    if sha256(snapshot) != rough["sha256"]:
+        raise ValueError("Rough snapshot changed")
+    if len(evidence) > 2:
+        raise ValueError("Invalid rough acceptance evidence")
+    if len(evidence) == 2:
+        expected_rough = {
+            "type": "rough_acceptance",
+            "workshop_id": state["workshop_id"],
+            "revision": rough["number"],
+            "sha256": rough["sha256"],
+            "confirmation": f"I accept rough revision {rough['number']} for sample review",
+        }
+        if evidence[1] != expected_rough:
+            raise ValueError("Invalid or stale rough acceptance")
 
 
 def staged_root(path):
@@ -156,6 +184,28 @@ def guard_scene(path):
         raise ValueError("Staged scene belongs to a different workshop or is missing its marker")
     if state["stage"] != "3d":
         raise ValueError("3D work requires an explicitly approved 2D layout revision")
+    if path == root / "scene.json" and scene.get("placements"):
+        from terrain.scene import resolve_placements
+        from terrain.workshop import check_material_change
+
+        _, catalog, resolved = resolve_placements(path)
+        if not scene.get("rough"):
+            layout = verify_revision(root, state["revisions"]["layout"])["plan"]
+            selected = next(o for o in layout["options"] if o["id"] == layout["selected_option"])
+            ids = {placement["id"] for placement in scene["placements"]}
+            scene = {
+                **scene,
+                "rough": {
+                    "bindings": {f["id"]: f["id"] for f in selected["features"] if f["id"] in ids},
+                    "tolerance_mm": 0,
+                    "clearance_height_mm": layout["dimensions"]["mini_scale"],
+                    "gaps": [],
+                    "sourcing": [],
+                    "proxies": [],
+                    "physical_unknowns": ["Provisional clearance band and unbound features"],
+                },
+            }
+        check_material_change(root, state, scene, catalog, resolved)
 
 
 def guard_workshop(path):

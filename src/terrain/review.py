@@ -129,6 +129,27 @@ def build_review(snapshot, output_dir):
         ),
         "journal": escaped(iteration["design_notes"]),
         "data": safe_json(payload),
+        "rough_evidence": (
+            "<section><h2>Rough play evidence</h2>"
+            "<p>Conservative mesh projections, not physical-fit or visual approval. "
+            "Proxy placements are not visual proof or printed stock.</p>"
+            "<pre>"
+            + escaped(json.dumps(report["rough_evidence"], indent=2, ensure_ascii=False))
+            + "</pre></section>"
+            if "rough_evidence" in report
+            else ""
+        ),
+        "internal_artifacts": (
+            ""
+            if "rough_evidence" in report
+            else '<a href="report.json">Full report</a> · '
+            '<a href="assembly.md">Assembly instructions</a>'
+        ),
+        "csv_link": (
+            ""
+            if "rough_evidence" in report
+            else '<a href="print-list.csv" download>Download CSV</a>'
+        ),
         "style": (TEMPLATES / "review.css").read_text(),
         "script": (TEMPLATES / "review.js").read_text(),
     }
