@@ -19,6 +19,26 @@ CAMERAS = {
 }
 
 
+def label_rough_preview(path, view, placements, proxies):
+    """Add a key without modifying the rendered geometry."""
+    with Image.open(path) as source:
+        picture = source.convert("RGB")
+    lines = [f"{view.upper()} · rough actual-scale layout · not physical approval"]
+    lines += [
+        f"{p['id']}: {p['position_mm']} mm"
+        + (" · PROXY (not visual proof)" if p["id"] in proxies else "")
+        for p in placements
+    ]
+    font = ImageFont.load_default(size=12)
+    header = max(24, 18 * len(lines) + 8)
+    result = Image.new("RGB", (max(picture.width, 500), picture.height + header), "white")
+    result.paste(picture, (0, header))
+    draw = ImageDraw.Draw(result)
+    for index, line in enumerate(lines):
+        draw.text((6, 4 + 18 * index), line, fill="#172332", font=font)
+    result.save(path)
+
+
 def label_custom_preview(path, placement_ids):
     from terrain.custom import DRAFT_LABEL
 

@@ -1,6 +1,7 @@
 """Source-controlled encounter drafts and private, reproducible visual checkpoints."""
 
 import copy
+import csv
 import json
 import os
 import re
@@ -12,6 +13,7 @@ from pathlib import Path
 from terrain.layout import check_plan, sheet, verify_revision
 from terrain.library import catalog_roots, read_json, sha256, write_json
 from terrain.review import build_review, write_history
+from terrain.rough import evidence as rough_evidence
 from terrain.scene import assemble_scene, init_scene, resolve_placements, scene_catalog
 from terrain.staged import (
     HELD_WORKSHOP,
@@ -22,6 +24,7 @@ from terrain.staged import (
     read_state,
     validate_state,
 )
+from terrain.visual import label_rough_preview
 
 VIEWS = ("iso", "reverse", "top", "front")
 DESIGN_NOTES = """# Encounter design journal
@@ -155,6 +158,8 @@ def update_workshop_state(path, expected, updated):
             raise ValueError("Workshop identity cannot change")
         if any(updated[k] != current[k] for k in ("stage", "revisions", "gate_evidence")):
             raise ValueError("Use the layout commands to change a gate")
+        if updated.get("requires_new_layout") != current.get("requires_new_layout"):
+            raise ValueError("Only a new layout can clear a required revision")
         if read_json(path / "scene.json").get("staged_workshop") != current["workshop_id"]:
             raise ValueError("Staged scene belongs to a different workshop")
         atomic_state(path, updated)
@@ -201,8 +206,10 @@ def save_layout(path, plan, expected_revision):
                 os.fsync(stream.fileno())
         reference = {"number": number, "sha256": sha256(source), "sheet_sha256": sha256(svg)}
         state["revisions"]["layout"] = reference
+        state["revisions"]["scene"] = None
         state["stage"] = "layout_review"
         state["gate_evidence"] = []
+        state.pop("requires_new_layout", None)
         state["pending_decision"] = plan["pending_decision"]
         validate_state(path, read_json(path / MARKER), state)
         atomic_state(path, state)
@@ -214,6 +221,8 @@ def approve_layout(path, revision, digest, confirmation):
     path = Path(path).resolve()
     with workshop_lock(path, state_update=True):
         state = read_state(path)
+        if state.get("requires_new_layout"):
+            raise ValueError("A new 2D revision is required before approval")
         reference = state["revisions"]["layout"]
         if (
             state["stage"] != "layout_review"
@@ -285,6 +294,43 @@ def materialize(snapshot, destination, openscad):
         report_path = stage / "report.json"
         report = read_json(report_path)
         report["previews"] = [str(destination / Path(p).name) for p in report["previews"]]
+        iteration = read_json(snapshot).get("iteration", {})
+        if "rough_evidence" in iteration:
+            report["rough_evidence"] = iteration["rough_evidence"]
+            for view in ("top", "iso"):
+                label_rough_preview(
+                    stage / f"{view}.png",
+                    view,
+                    report["placements"],
+                    report["rough_evidence"]["proxy_placements"],
+                )
+            stock = {entry["asset"]: entry for entry in report["rough_evidence"]["stock"]}
+            report["print_list"] = [
+                {
+                    **item,
+                    "required": stock[item["asset"]]["required"],
+                    "already_printed": stock[item["asset"]]["printed"],
+                    "to_print": stock[item["asset"]]["shortfall"],
+                }
+                for item in report["print_list"]
+                if item["asset"] in stock
+            ]
+            with (stage / "print-list.csv").open("w", newline="") as stream:
+                writer = csv.writer(stream)
+                writer.writerow(
+                    ["asset", "required", "already_printed", "to_print", "source", "license"]
+                )
+                for item in report["print_list"]:
+                    writer.writerow(
+                        [
+                            item["asset"],
+                            item["required"],
+                            item["already_printed"],
+                            item["to_print"],
+                            item["source"],
+                            item["license"]["name"],
+                        ]
+                    )
         write_json(report_path, report)
         # A 3MF preview may refer to a flattened cache in the staging directory.
         source = stage / "assembly.scad"
@@ -324,13 +370,37 @@ def materialize_history(history, output, openscad):
             )
 
 
+def check_material_change(path, state, scene, catalog, resolved):
+    layout = verify_revision(path, state["revisions"]["layout"])
+    play = rough_evidence(scene, catalog, resolved, layout)
+    if play["material_changes"]:
+        state["stage"] = "layout_review"
+        state["gate_evidence"] = []
+        state["revisions"]["scene"] = None
+        state["requires_new_layout"] = True
+        state["pending_decision"] = "Revise the 2D plan to address: " + json.dumps(
+            play["material_changes"], ensure_ascii=False
+        )
+        atomic_state(path, state)
+        raise ValueError(
+            "Material change requires a new 2D revision: "
+            + json.dumps(play["material_changes"], ensure_ascii=False)
+        )
+    return play
+
+
 def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad"):
     path, output = Path(path).resolve(), Path(output_dir).resolve()
     if not title.strip() or not changes.strip():
         raise ValueError("A checkpoint needs a title and a change summary")
     with workshop_lock(path):
         working = path / "scene.json"
-        scene, _, resolved = resolve_placements(working)
+        scene, catalog, resolved = resolve_placements(working)
+        state = read_state(path) if (path / MARKER).exists() else None
+        play = None
+        if state is not None:
+            layout_ref = state["revisions"]["layout"]
+            play = check_material_change(path, state, scene, catalog, resolved)
         history = revisions(path)
         prepare_output(path, output, [(working, scene), *history])
         materialize_history(history, output, openscad)
@@ -355,6 +425,9 @@ def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad
             "design_notes": (path / "design.md").read_text(),
             "printed_inventory": {asset["id"]: asset["printed"] for _, asset, _, _ in resolved},
         }
+        if state is not None:
+            draft["iteration"]["layout_revision"] = layout_ref
+            draft["iteration"]["rough_evidence"] = play
         with tempfile.NamedTemporaryFile(dir=folder, prefix=".draft-", suffix=".json") as stream:
             pending = Path(stream.name)
             write_json(pending, draft)
@@ -364,6 +437,19 @@ def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad
                 saved.write(pending.read_text())
         history.append((snapshot, draft))
         write_history(output, history)
+        if state is not None:
+            state["revisions"]["scene"] = {
+                "number": number,
+                "sha256": sha256(snapshot),
+                "working_sha256": sha256(working),
+                "layout_sha256": layout_ref["sha256"],
+            }
+            state["gate_evidence"] = state["gate_evidence"][:1]
+            state["pending_decision"] = (
+                f"Review rough revision {number} and decide whether to accept it for sample review."
+            )
+            validate_state(path, read_json(path / MARKER), state)
+            atomic_state(path, state)
     return {
         "revision": number,
         "snapshot": snapshot,
@@ -376,6 +462,9 @@ def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad
 def review_workshop(path, output_dir, openscad="openscad"):
     path, output = Path(path).resolve(), Path(output_dir).resolve()
     with workshop_lock(path):
+        if (path / MARKER).exists():
+            scene, catalog, resolved = resolve_placements(path / "scene.json")
+            check_material_change(path, read_state(path), scene, catalog, resolved)
         history = revisions(path)
         if not history:
             raise ValueError("Workshop has no saved iterations; create a checkpoint first")
@@ -383,3 +472,59 @@ def review_workshop(path, output_dir, openscad="openscad"):
         materialize_history(history, output, openscad)
         write_history(output, history)
     return {"revisions": len(history), "index": output / "index.html"}
+
+
+def accept_rough(path, revision, digest, confirmation):
+    path = Path(path).resolve()
+    with workshop_lock(path, state_update=True):
+        state = read_state(path)
+        rough = state["revisions"]["scene"]
+        if (
+            state["stage"] != "3d"
+            or not rough
+            or (rough["number"] != revision or rough["sha256"] != digest)
+        ):
+            raise ValueError("Acceptance must identify the current rough snapshot and digest")
+        if sha256(path / "scene.json") != rough["working_sha256"]:
+            raise ValueError("Working scene changed; checkpoint before acceptance")
+        snapshot = path / "revisions" / f"{revision:04}.json"
+        resolve_placements(snapshot)
+        saved = read_json(snapshot)
+        play = saved["iteration"]["rough_evidence"]
+        if (
+            play["material_changes"]
+            or play["unresolved_features"]
+            or any(gap["status"] != "resolved" for gap in play["gaps"])
+        ):
+            raise ValueError("Resolve blocking gaps and material changes before rough acceptance")
+        phrase = f"I accept rough revision {revision} for sample review"
+        if confirmation != phrase:
+            raise ValueError(f"Explicit confirmation required: {phrase}")
+        state["gate_evidence"] = state["gate_evidence"][:1] + [
+            {
+                "type": "rough_acceptance",
+                "workshop_id": state["workshop_id"],
+                "revision": revision,
+                "sha256": digest,
+                "confirmation": confirmation,
+            }
+        ]
+        state["pending_decision"] = (
+            "Review sample pieces; visual and release approval remain pending."
+        )
+        validate_state(path, read_json(path / MARKER), state)
+        atomic_state(path, state)
+    return {"workshop": path, "sample_review_ready": True, "revision": revision}
+
+
+def sample_review_status(path):
+    path = Path(path).resolve()
+    with workshop_lock(path):
+        state = read_state(path)
+        rough = state["revisions"]["scene"]
+        if not rough or len(state["gate_evidence"]) != 2:
+            raise ValueError("Explicit acceptance of the current rough snapshot is required")
+        if sha256(path / "scene.json") != rough["working_sha256"]:
+            raise ValueError("Working scene changed; rough acceptance is stale")
+        resolve_placements(path / "revisions" / f"{rough['number']:04}.json")
+        return {"sample_review_ready": True, "rough": rough}

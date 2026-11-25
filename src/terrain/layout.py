@@ -126,6 +126,8 @@ def check_plan(plan):
                 raise ValueError(f"Feature {fid} lies outside the outer dimensions")
             if type(f.get("blocks")) is not bool:
                 raise ValueError("Each feature needs a boolean blocks value")
+            if "height_mm" in f:
+                number(f["height_mm"], "feature height_mm", zero=True)
             if f["blocks"]:
                 obstacles.append((x, y, x + w, y + h))
         if not {"entry", "reveal", "cover", "interaction", "height", "stairs"} <= kinds:

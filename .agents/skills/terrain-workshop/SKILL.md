@@ -152,6 +152,12 @@ commitments without the user's permission.
 
 Make a coherent first arrangement early, then change one design hypothesis or a small
 related group at a time. Avoid a hidden batch of revisions before the user sees anything.
+After 2D approval inspect actual local catalog contact sheets before selecting intact
+meshes. Capture the `rough` bindings, expected height, proxies, occupied bases, gaps and
+read-only sourcing records described in `docs/workshop-state.md`. No purchase, unauthorised
+download/import, restricted-asset remodelling, or upload is implied. If physical mesh
+fit materially changes footprint, entry, height, cover, routes or interactions, explain
+the smallest change and return to a new 2D approval before continuing.
 
 ```bash
 uv run terrain workshop checkpoint scenes/<slug> \
@@ -185,11 +191,14 @@ For **every** iteration:
 
 1. Open at least iso and top previews yourself, adding reverse/front for occlusion.
    Inspect actual geometry, not only a concept image or successful exit code.
-2. Read `report.json`, `print-list.csv`, and `assembly.md`. Compare conservative scene
+2. Read the internal `report.json`, `print-list.csv`, and `assembly.md`. Compare conservative scene
    extents with the agreed footprint, and flag anything that exceeds it. Review overlaps,
    access, standing room, silhouette, missing assets and physical checks. AABB overlap
    is not an exact collision test. Do not assert measured route widths or line-of-sight
    clearance unless you actually checked them.
+   Report the measured projected-mesh route checks, occupied-base positions, height
+   envelopes, entry and objective and what remains unverified for stairs, hand access,
+   cover and reveal. A proxy is not visual proof; unknown printed stock is not zero.
 3. Give the user a link/path to `build/workshops/<slug>/index.html`, and embed iso/top
    images in chat using absolute workspace paths. Open the review in the available local
    browser when possible. The index browses earlier revisions, not just the current draft.
@@ -201,6 +210,11 @@ For **every** iteration:
    with quantities and review hashes; they are not part of the printable library list.
 6. Ask for focused visual feedback: what to keep, what to change, and the next meaningful
    decision. Refer to a camera angle and stable piece IDs. **Stop and wait.**
+
+Only an explicit unconditional GM acceptance of the exact current rough snapshot may
+open sample review. Use `terrain workshop accept-rough` with its current SHA-256 as
+documented in `docs/workshop-state.md`; never infer it from a rendering, generic assent,
+or a cached review. This opens sample review only, not a visual verdict or release.
 
 Update the journal and encounter on the next answer, revise the working scene, checkpoint,
 and repeat. Do not silently drop confirmed choices when fixing a new concern. If the

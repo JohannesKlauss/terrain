@@ -174,6 +174,18 @@ def test_approved_layout_unlocks_real_scene_and_checkpoint(tmp_path, monkeypatch
     index_library(models, catalog)
     path = tmp_path / "workshop"
     init_workshop(path, catalog, "Chapel", "Altar")
+    working = path / "scene.json"
+    scene_record = read_json(working)
+    scene_record["rough"] = {
+        "bindings": {},
+        "tolerance_mm": 1,
+        "clearance_height_mm": 30,
+        "gaps": [],
+        "sourcing": [],
+        "proxies": [],
+        "physical_unknowns": [],
+    }
+    working.write_text(json.dumps(scene_record))
     result = save_layout(path, read_json(EXAMPLE), 0)
     ref = result["revision"]
     approve_layout(path, 1, ref["sha256"], "I approve 2D revision 1 option direct for 3D")
@@ -182,7 +194,7 @@ def test_approved_layout_unlocks_real_scene_and_checkpoint(tmp_path, monkeypatch
         lambda source, dest, *a, **k: Image.new("RGB", (40, 30)).save(dest),
     )
     scene = str(path / "scene.json")
-    add = ["scene", "add", scene, "--asset", "wall.stl", "--id", "wall", "--at", "0", "0", "0"]
+    add = ["scene", "add", scene, "--asset", "wall.stl", "--id", "wall", "--at", "30", "30", "0"]
     with workshop_lock(path, state_update=True):
         result_process = subprocess.run(
             [str(Path(sys.executable).parent / "terrain"), *add], capture_output=True, text=True
