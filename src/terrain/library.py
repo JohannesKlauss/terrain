@@ -240,6 +240,7 @@ def index_library(
             "collection": collection,
             "category": annotations.get("category", category_for(path.stem)),
             "description": annotations.get("description", ""),
+            "source_url": annotations.get("source_url", ""),
             "tags": annotations["tags"],
             "visual_review": annotations.get("visual_review", "pending"),
             "author": annotations.get("author", ""),

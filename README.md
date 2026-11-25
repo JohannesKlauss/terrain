@@ -8,19 +8,36 @@ Only explicit approval imports them into the local library and `assets/custom/`.
 
 ## Design an encounter together
 
-Use the **terrain-workshop** skill for a discussion-driven workflow:
+Start a new workshop with this literal prompt in a session with the skill loaded:
 
-> Use terrain-workshop. Help me design a battlefield for my next pen-and-paper session.
+> /terrain-workshop Help me design a battlefield for my next pen-and-paper session.
 > Interview me in short rounds about the place, antagonist, their character and tactics,
-> the party, and what should happen here. Turn those answers into terrain and show me
-> drafts early. Let me inspect them in interactive 3D, then refine the layout from my
-> feedback. Keep a printing list for each iteration.
+> the party, and what should happen here. Show me distinct tactical layouts and pause
+> for my decisions. Do not treat assumptions or silence as approval.
+
+Resume in a fresh session with:
+
+> /terrain-workshop Resume my saved workshop. Run workshop status, show the current
+> stage and pending decision, and continue from the last explicitly approved revision.
+> Ask which workshop only if more than one could be meant.
+
+`workshop init` creates a fresh slug, state and journal without approving a design or
+requiring the catalog to exist. `workshop status` lists saved workshops; `status
+scenes/<slug>` reads the current state. At intake, discuss the brief and save a checked
+2D comparison. At layout review, show it and wait for explicit approval of the exact
+revision. Only then build a rough 3D layout from local assets. At rough review, inspect
+play evidence and wait for exact rough acceptance. After that, show one actual-mesh
+sample and ask separately whether the rest of the board matching it would be printable
+in the GM's judgment. A negative, conditional or missing answer does not allow detail.
+After a positive sample and current play pass, detail, checkpoint the final board, and
+obtain separate finished-play and finished-visual verdicts. See
+`docs/workshop-state.md` for commands and exact confirmation phrases.
 
 The loop is **discuss → research the library → plan → build a draft → inspect → discuss**.
 The agent asks focused questions instead of giving you an intake form. It connects
 fiction to player choices: a villain's retreat route, an interruptible ritual, a
-dangerous approach, a useful flank, or a room repurposed by its occupants. It drafts
-freely, then pauses for your visual feedback. Unconfirmed ideas stay labelled as
+dangerous approach, a useful flank, or a room repurposed by its occupants. It pauses
+at each approval gate before progressing. Unconfirmed ideas stay labelled as
 assumptions, not decisions.
 
 Each workshop has an editable scene and a design journal. Each checkpoint saves a new
@@ -31,23 +48,39 @@ remain available if WebGL 2 is unavailable. The 50 mm viewer grid is a reference
 not an inferred asset module or game grid. Original Blender drafts can appear alongside
 library pieces, in purple and explicitly unindexed until separate model approval.
 
-The agent runs these commands on your behalf, after indexing the library:
+The agent runs these commands on your behalf:
 
 ```bash
 uv run terrain workshop init scenes/my-encounter \
   --name "The pressure chapel" --brief "A ritual inside a failing industrial shrine"
 
-# The agent records the discussion in design.md and scene.json, inspects library
-# candidates, then adds/moves intact pieces in scenes/my-encounter/scene.json.
+# Discuss and save a checked 2D comparison, then wait for exact 2D approval.
+# Only after approval, index and inspect the library and arrange rough pieces.
 
 uv run terrain workshop checkpoint scenes/my-encounter \
   --title "The first approach" --changes "Offset the control point and open the foreground"
 
-# After your feedback and the agent's layout changes:
-uv run terrain workshop checkpoint scenes/my-encounter \
-  --title "A safer flank" --feedback "The approach feels too exposed" \
-  --changes "Move side cover to interrupt the approach sight line"
+# Review and explicitly accept this rough revision before building a visual sample.
 ```
+
+After the sample and finished-board decisions, generate and recheck a private pack:
+
+```bash
+uv run terrain workshop status scenes/my-encounter
+uv run terrain workshop handoff scenes/my-encounter --revision <finished-number> \
+  --sha256 <finished-snapshot-sha256> --output-dir build/handoffs/my-encounter
+uv run terrain workshop verify-handoff scenes/my-encounter \
+  --pack build/handoffs/my-encounter/handoff-<zero-padded-number>
+```
+
+The separate handoff includes keyed assembly views, print table, exclusions and a
+release checklist. Re-run `verify-handoff` before relying on it; changed inputs, gate
+evidence, source files or pack files invalidate it. Pending release checks mean **for
+slicing and verification**, not ready to print. No command here purchases, uploads,
+slices, prints or heats anything. To link genuine existing physical or slicer evidence,
+use `--evidence` with the local, snapshot-bound JSON described in
+`docs/workshop-state.md`. The program checks file hashes, not the truth of a person's
+physical test.
 
 Open `build/workshops/my-encounter/index.html` directly in your browser. No server, CDN,
 API key, external model upload, or browser network request is needed. The review embeds

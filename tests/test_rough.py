@@ -167,7 +167,9 @@ def test_sample_and_finished_gates(workshop, tmp_path, monkeypatch):
     assert workshop_status(path)["quality_status"]["handoff"]
     fresh = subprocess.run(
         [str(Path(sys.executable).parent / "terrain"), "workshop", "status", str(path)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     fresh_status = json.loads(fresh.stdout)["quality_status"]
     assert fresh_status["rough_acceptance"] == "accepted (historical)"
@@ -202,11 +204,13 @@ def test_proxy_and_changed_sample_inputs_block_detail(workshop, tmp_path, monkey
     checkpoint(path, tmp_path / "out", "Rough", "Place all parts")
     ref = workshop_status(path)["revisions"]["scene"]
     accept_rough(path, 1, ref["sha256"], "I accept rough revision 1 for sample review")
-    sample = build_sample(path, tmp_path / "sample", "cover", "altar", "steps",
-                          "Reference", "Proxy", "Focal")["sample"]
+    sample = build_sample(
+        path, tmp_path / "sample", "cover", "altar", "steps", "Reference", "Proxy", "Focal"
+    )["sample"]
     with pytest.raises(ValueError, match="proxy focal"):
-        decide_sample(path, 1, sample["sha256"], "approved",
-                      "I would print the board if it matched sample 1")
+        decide_sample(
+            path, 1, sample["sha256"], "approved", "I would print the board if it matched sample 1"
+        )
     scene = read_json(path / "scene.json")
     scene["rough"]["clearance_height_mm"] += 1
     (path / "scene.json").write_text(json.dumps(scene))
@@ -228,10 +232,218 @@ def test_failed_sample_render_preserves_rough_acceptance(workshop, tmp_path, mon
 
     monkeypatch.setattr("terrain.visual.render_seated", fail)
     with pytest.raises(ValueError, match="render failed"):
-        build_sample(path, tmp_path / "sample", "altar", "dais", "steps",
-                     "Reference", "Intent", "Missing")
+        build_sample(
+            path, tmp_path / "sample", "altar", "dais", "steps", "Reference", "Intent", "Missing"
+        )
     assert workshop_status(path)["quality_status"]["rough_acceptance"] == "accepted"
     assert sample_review_status(path)["sample_review_ready"]
+
+
+def test_handoff_requires_gates_and_rechecks_evidence(workshop, tmp_path, monkeypatch):
+    from terrain.handoff import CHECKS, handoff, verify_handoff
+    from terrain.library import sha256
+    from terrain.quality import build_sample, decide_finished, decide_sample
+
+    path, _, models = workshop
+    monkeypatch.setattr(
+        "subprocess.run", lambda *a, **k: pytest.fail("Unexpected external process")
+    )
+    output = tmp_path / "pack"
+    before = (path / "workshop-state.json").read_bytes()
+    with monkeypatch.context() as guard:
+        guard.setattr("terrain.handoff.assemble_scene", lambda *a, **k: pytest.fail("rendered"))
+        with pytest.raises(ValueError):
+            handoff(path, output, 1, "wrong")
+        assert (
+            main(
+                [
+                    "workshop",
+                    "handoff",
+                    str(path),
+                    "--output-dir",
+                    str(output),
+                    "--revision",
+                    "1",
+                    "--sha256",
+                    "wrong",
+                ]
+            )
+            == 1
+        )
+        assert (
+            main(
+                [
+                    "workshop",
+                    "handoff",
+                    str(tmp_path / "absent"),
+                    "--output-dir",
+                    str(output),
+                    "--revision",
+                    "1",
+                    "--sha256",
+                    "wrong",
+                ]
+            )
+            == 1
+        )
+    assert not output.exists()
+    assert (path / "workshop-state.json").read_bytes() == before
+
+    catalog_path = tmp_path / "catalog.json"
+    catalog = read_json(catalog_path)
+    asset = catalog["assets"][0]
+    asset.update(
+        license={"name": "Fixture license"},
+        units_confirmed=True,
+        printed=1,
+        connectors={"system": "OpenLOCK", "status": "fixture"},
+    )
+    catalog_path.write_text(json.dumps(catalog))
+    scene_path = path / "scene.json"
+    scene = read_json(scene_path)
+    scene["rough"]["proxies"] = []
+    scene["handoff"] = {
+        "removable": ["steps"],
+        "nonprinted": ["fixture token"],
+        "handedness": "No handed pieces",
+    }
+    scene_path.write_text(json.dumps(scene))
+    monkeypatch.setattr(
+        "terrain.visual.render_seated",
+        lambda source, destination, *a, **k: Image.new("RGB", (40, 30), "#777777").save(
+            destination
+        ),
+    )
+    checkpoint(path, tmp_path / "out", "Rough", "Place all parts")
+    ref = workshop_status(path)["revisions"]["scene"]
+    with pytest.raises(ValueError):
+        handoff(path, output, 1, ref["sha256"])
+    assert not output.exists()
+    accept_rough(path, 1, ref["sha256"], "I accept rough revision 1 for sample review")
+    sample = build_sample(
+        path, tmp_path / "sample", "altar", "dais", "steps", "Fixture", "Simplified", "Details"
+    )["sample"]
+    assert "Review sample" in workshop_status(path)["pending_decision"]
+    decide_sample(
+        path, 1, sample["sha256"], "approved", "I would print the board if it matched sample 1"
+    )
+    checkpoint(path, tmp_path / "out", "Final", "Finish board")
+    ref = workshop_status(path)["revisions"]["scene"]
+    decide_finished(path, 2, ref["sha256"], "play", "I approve finished play revision 2")
+    assert "finished visuals" in workshop_status(path)["pending_decision"]
+    with pytest.raises(ValueError):
+        handoff(path, output, 2, ref["sha256"])
+    assert not output.exists()
+    decide_finished(path, 2, ref["sha256"], "visual", "I approve finished board revision 2")
+    assert "handoff" in workshop_status(path)["pending_decision"]
+    state_file = path / "workshop-state.json"
+    original_state = state_file.read_bytes()
+    state = read_json(state_file)
+    event_ref = state["quality"]["history"][-1]
+    event_path = path / "quality" / f"{event_ref['number']:04}.json"
+    original_event = event_path.read_bytes()
+    event = read_json(event_path)
+    event["workshop_id"] = "another-workshop"
+    event_path.write_text(json.dumps(event))
+    event_ref["sha256"] = sha256(event_path)
+    state_file.write_text(json.dumps(state))
+    with pytest.raises(ValueError, match="another workshop"):
+        handoff(path, output, 2, ref["sha256"])
+    assert not output.exists()
+    event_path.write_bytes(original_event)
+    state_file.write_bytes(original_state)
+    scene_bytes = scene_path.read_bytes()
+    scene_path.write_bytes(scene_bytes + b" ")
+    with pytest.raises(ValueError, match="changed"):
+        handoff(path, output, 2, ref["sha256"])
+    assert not output.exists()
+    scene_path.write_bytes(scene_bytes)
+    layout_path = path / "layouts" / "0001.json"
+    layout_bytes = layout_path.read_bytes()
+    layout_path.write_bytes(layout_bytes + b" ")
+    with pytest.raises(ValueError, match="changed"):
+        handoff(path, output, 2, ref["sha256"])
+    assert not output.exists()
+    layout_path.write_bytes(layout_bytes)
+    with pytest.raises(ValueError, match="current finished"):
+        handoff(path, output, 1, ref["sha256"])
+    assert not output.exists()
+    pending = handoff(path, output, 2, ref["sha256"])
+    pack = Path(pending["handoff"])
+    assert pending["release"]["status"] == "pending"
+    assert pending["release"]["checks"]["openlock_coupon"]["status"] == "pending"
+    assert verify_handoff(path, pack)["valid"]
+    assert not (pack / "print-list.csv").exists()
+    assert "fixture token" in (pack / "handoff-assembly.md").read_text()
+    assert read_json(pack / "handoff.json")["print_table"][0]["outstanding"] == 3
+    catalog_bytes = catalog_path.read_bytes()
+    catalog_path.write_bytes(catalog_bytes + b" ")
+    with pytest.raises(ValueError, match="catalog changed"):
+        verify_handoff(path, pack)
+    catalog_path.write_bytes(catalog_bytes)
+    picture = pack / "top.png"
+    original_picture = picture.read_bytes()
+    picture.write_bytes(original_picture + b"changed")
+    with pytest.raises(ValueError, match="artifact changed"):
+        verify_handoff(path, pack)
+    picture.write_bytes(original_picture)
+
+    local_evidence = tmp_path / "test-only-evidence.txt"
+    local_evidence.write_text("Test fixture, not a real physical or slicer result.")
+    link = {"path": str(local_evidence), "sha256": sha256(local_evidence)}
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "workshop_id": workshop_status(path)["workshop_id"],
+                "snapshot_sha256": ref["sha256"],
+                "checks": {
+                    name: {"status": "verified", "note": "Test only", "evidence": [link]}
+                    for name in CHECKS
+                },
+            }
+        )
+    )
+    evidence = read_json(evidence_path)
+    evidence["workshop_id"] = "wrong-workshop"
+    evidence_path.write_text(json.dumps(evidence))
+    with pytest.raises(ValueError, match="identify this workshop"):
+        handoff(path, tmp_path / "wrong-evidence", 2, ref["sha256"], evidence_path)
+    assert not (tmp_path / "wrong-evidence").exists()
+    evidence["workshop_id"] = workshop_status(path)["workshop_id"]
+    evidence_path.write_text(json.dumps(evidence))
+    complete = handoff(path, tmp_path / "complete", 2, ref["sha256"], evidence_path)
+    assert complete["release"]["status"] == "evidence recorded"
+    assert verify_handoff(path, complete["handoff"])["valid"]
+    local_evidence.write_text("changed")
+    with pytest.raises(ValueError, match="evidence changed"):
+        verify_handoff(path, complete["handoff"])
+    trimesh.creation.box(extents=[11, 10, 10]).export(models / "box.stl")
+    with pytest.raises(ValueError, match="changed"):
+        verify_handoff(path, pack)
+    with pytest.raises(ValueError, match="changed"):
+        handoff(path, tmp_path / "stale-output", 2, ref["sha256"])
+    assert not (tmp_path / "stale-output").exists()
+
+
+def test_handoff_excludes_unknown_license_and_preserves_unknown_stock(workshop):
+    from terrain.handoff import inventory
+
+    path, _, _ = workshop
+    scene, catalog, resolved = resolve_placements(path / "scene.json")
+    rows, excluded = inventory(scene, catalog, resolved, {"proxy_placements": ["cover"]})
+    assert rows == []
+    assert any(item.get("reason") == "unknown license" for item in excluded)
+    assert any(item.get("placement") == "cover" for item in excluded)
+    licensed = []
+    for placement, asset, matrix, bounds in resolved:
+        asset = {**asset, "license": {"name": "Fixture"}, "printed": None}
+        licensed.append((placement, asset, matrix, bounds))
+    rows, excluded = inventory(scene, catalog, licensed, {"proxy_placements": ["cover"]})
+    assert rows[0]["required"] == 3
+    assert rows[0]["physical_stock"] is None and rows[0]["outstanding"] is None
+    assert len(excluded) == 1
 
 
 def test_material_change_requires_new_layout(workshop, tmp_path):

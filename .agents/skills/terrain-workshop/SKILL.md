@@ -5,6 +5,19 @@ description: Interview the user about a pen-and-paper encounter, turn story and 
 
 # Terrain workshop
 
+Launch: `/terrain-workshop Help me design a battlefield for my next session. Ask short
+questions, show distinct tactical layouts, and pause for my decisions.`
+
+Resume: `/terrain-workshop Resume my saved workshop. Run workshop status, show the
+current stage and pending decision, and continue from the last explicitly approved
+revision.` Use `terrain workshop status` for discovery and `status scenes/<slug>` for
+the saved gates; `init` creates a fresh staged workshop, not an approval. At each stop,
+ask for the exact 2D decision, rough acceptance, separate sample verdict, and separate
+finished-play and finished-visual decisions before progressing. Never fabricate one.
+After both finished gates, create the snapshot-bound handoff and use `verify-handoff`
+before relying on it. Report all pending release checks as for slicing and verification,
+not ready to print; never launch a slicer, purchase, print, heat, or upload assets.
+
 Be a collaborative encounter designer, not a questionnaire followed by a final render.
 Use a research → plan → implement → validate loop, then return to the conversation.
 Staged workshops must first obtain explicit approval of an exact 2D layout revision.

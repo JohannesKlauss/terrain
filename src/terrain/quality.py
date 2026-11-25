@@ -291,6 +291,9 @@ This is not a custom import approval or a billable commitment.</p>
             "distance_mm": distance_mm,
         }
         q.update(sample=sample, sample_verdict=None, finished_play=None, finished_visual=None)
+        state["pending_decision"] = (
+            f"Review sample {number}: would you print the board if the rest matched it?"
+        )
         commit_quality(root, state, q, {"type": "sample", "sample": sample})
         return {"sample": sample, "review": str(destination / "index.html")}
 
@@ -325,6 +328,11 @@ def decide_sample(root, number, digest, verdict, confirmation, mismatch=""):
             "mismatch": mismatch,
         }
         q.update(sample_verdict=record, finished_play=None, finished_visual=None)
+        state["pending_decision"] = (
+            "Detail the board and checkpoint the finished revision."
+            if verdict == "approved"
+            else "Resolve the sample mismatch without discarding the accepted rough layout."
+        )
         commit_quality(root, state, q, {"type": "sample_verdict", "verdict": record})
         return record
 
@@ -369,5 +377,10 @@ def decide_finished(root, revision, digest, kind, confirmation):
             raise ValueError("Unknown finished gate")
         if confirmation != phrase:
             raise ValueError(f"Explicit confirmation required: {phrase}")
+        state["pending_decision"] = (
+            f"Review finished visuals for revision {revision}."
+            if kind == "play"
+            else f"Generate and verify the handoff for revision {revision}."
+        )
         commit_quality(root, state, q, {"type": f"finished_{kind}", "record": record})
         return record
