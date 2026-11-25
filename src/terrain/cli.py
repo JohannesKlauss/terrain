@@ -9,6 +9,7 @@ from terrain.catalog import named_spec, part_contract
 from terrain.custom import approve_custom, create_custom, preview_custom
 from terrain.library import index_library, load_catalog, read_json, search_assets
 from terrain.mesh import MeshRules, inspect_mesh
+from terrain.quality import build_sample, decide_finished, decide_sample
 from terrain.scene import add_custom_placement, add_placement, assemble_scene, init_scene
 from terrain.visual import preview_library
 from terrain.workshop import (
@@ -113,6 +114,28 @@ def create_parser():
     accept.add_argument("--confirmation", required=True)
     sample = workshop_commands.add_parser("sample-review")
     sample.add_argument("path", type=Path)
+    sample = workshop_commands.add_parser("sample-build")
+    sample.add_argument("path", type=Path)
+    sample.add_argument("--output-dir", type=Path, required=True)
+    for name in ("focal", "architecture", "miniature", "reference", "intent", "missing"):
+        sample.add_argument(f"--{name}", required=True)
+    sample.add_argument("--distance-mm", type=float, default=800)
+    sample.add_argument("--openscad", default="openscad")
+    verdict = workshop_commands.add_parser("sample-verdict")
+    verdict.add_argument("path", type=Path)
+    verdict.add_argument("--sample", type=int, required=True)
+    verdict.add_argument("--sha256", required=True)
+    verdict.add_argument(
+        "--verdict", choices=("approved", "rejected", "inconclusive"), required=True
+    )
+    verdict.add_argument("--confirmation", required=True)
+    verdict.add_argument("--mismatch", default="")
+    for name in ("finished-play", "finished-visual"):
+        gate = workshop_commands.add_parser(name)
+        gate.add_argument("path", type=Path)
+        gate.add_argument("--revision", type=int, required=True)
+        gate.add_argument("--sha256", required=True)
+        gate.add_argument("--confirmation", required=True)
     for action in ("checkpoint", "review"):
         sub = workshop_commands.add_parser(action)
         sub.add_argument("path", type=Path)
@@ -238,6 +261,31 @@ def run_workshop(args):
         result = accept_rough(args.path, args.revision, args.sha256, args.confirmation)
     elif args.action == "sample-review":
         result = sample_review_status(args.path)
+    elif args.action == "sample-build":
+        result = build_sample(
+            args.path,
+            args.output_dir,
+            args.focal,
+            args.architecture,
+            args.miniature,
+            args.reference,
+            args.intent,
+            args.missing,
+            args.distance_mm,
+            args.openscad,
+        )
+    elif args.action == "sample-verdict":
+        result = decide_sample(
+            args.path, args.sample, args.sha256, args.verdict, args.confirmation, args.mismatch
+        )
+    elif args.action in ("finished-play", "finished-visual"):
+        result = decide_finished(
+            args.path,
+            args.revision,
+            args.sha256,
+            args.action.removeprefix("finished-"),
+            args.confirmation,
+        )
     else:
         output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
         if args.action == "checkpoint":

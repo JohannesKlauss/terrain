@@ -1,5 +1,42 @@
 # Staged workshop and 2D contract
 
+## Sample and finished-board decisions
+
+After accepting the exact rough checkpoint, build one local sample from three existing,
+distinct rough placements (focal piece, adjacent architecture and miniature-scale cue):
+
+```bash
+uv run terrain workshop sample-build scenes/<slug> --output-dir /private/review \
+  --focal <id> --architecture <id> --miniature <id> \
+  --reference "agreed reference" --intent "simplifications" --missing "missing details"
+```
+
+The result gives a sample number, digest and local review page. The page distinguishes
+actual meshes from rough proxies and records the agreed reference, simplifications and
+missing details. The seated perspective defaults to an 800 mm camera distance; adjust
+`--distance-mm` to the agreed distance. It is not a physical fit or sightline certificate.
+Ask separately: “Would you print the board if the rest matched this sample?”
+
+Record a positive answer using `sample-verdict` with `--sample N`, `--sha256` from the
+sample and `--verdict approved --confirmation "I would print the board if it matched sample N"`.
+Record a negative or inconclusive answer with `--verdict rejected` or `inconclusive`,
+the actual answer in `--confirmation`, and one mismatch in `--mismatch`. Neither
+silence nor conditional agreement is approval. A proxy focal piece cannot pass. A
+failed sample does not erase the accepted rough layout. These decisions do not approve
+`terrain custom approve` and do not authorize purchases, printing or billable work.
+
+Only after sample approval may staged placements be added as detail. Checkpoint the
+finished board, then use `finished-play` and `finished-visual` with its `--revision N`
+and `--sha256`, respectively confirming `I approve finished play revision N` and
+`I approve finished board revision N`. Play evidence is recomputed for that snapshot.
+`workshop status` reports rough, sample, finished play, finished visual and handoff
+separately. Handoff is true only while both finished verdicts, the sample and their
+source bytes remain current. A changed rough input or sample placement requires a new
+rough/sample pass; material changes may require a new 2D revision. A changed finished
+scene requires a new checkpoint and fresh finished verdicts. The numbered quality
+history preserves decisions even when newer gates replace them. Local preview images
+are not a substitute for the hashes or for physical inspection.
+
 `terrain workshop init scenes/<slug> --name ... --brief ...` creates a staged workshop
 without inspecting a catalog or invoking modelling tools. `terrain workshop status`
 lists candidates; `status scenes/<slug>` resumes facts, assumptions, questions, stage,

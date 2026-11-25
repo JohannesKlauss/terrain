@@ -10,6 +10,7 @@ from pathlib import Path
 
 from terrain.layout import verify_revision
 from terrain.library import read_json, sha256
+from terrain.quality import validate_quality
 
 MARKER = ".terrain-staged.json"
 STATE = "workshop-state.json"
@@ -60,6 +61,7 @@ def read_state(path):
 
 
 def validate_state(path, marker, state):
+    validate_quality(path, state)
     if (
         marker.get("schema_version") != 1
         or not isinstance(marker.get("workshop_id"), str)
@@ -164,6 +166,12 @@ def scene_operation(function):
         from terrain.workshop import workshop_lock
 
         with workshop_lock(root, state_update=True):
+            if function.__name__ in ("add_placement", "add_custom_placement"):
+                state = read_state(root)
+                if len(state["gate_evidence"]) == 2 or state.get("quality", {}).get("sample"):
+                    from terrain.quality import sample_pass
+
+                    sample_pass(root, state)
             return function(path, *args, **kwargs)
 
     return guarded
@@ -184,6 +192,11 @@ def guard_scene(path):
         raise ValueError("Staged scene belongs to a different workshop or is missing its marker")
     if state["stage"] != "3d":
         raise ValueError("3D work requires an explicitly approved 2D layout revision")
+    if path.parent == root / "samples" and (
+        len(state["gate_evidence"]) != 2
+        or sha256(root / "scene.json") != state["revisions"]["scene"]["working_sha256"]
+    ):
+        raise ValueError("A current rough acceptance is required for sample work")
     if path == root / "scene.json" and scene.get("placements"):
         from terrain.scene import resolve_placements
         from terrain.workshop import check_material_change

@@ -12,6 +12,8 @@ from pathlib import Path
 
 from terrain.layout import check_plan, sheet, verify_revision
 from terrain.library import catalog_roots, read_json, sha256, write_json
+from terrain.quality import quality
+from terrain.quality import status as quality_status
 from terrain.review import build_review, write_history
 from terrain.rough import evidence as rough_evidence
 from terrain.scene import assemble_scene, init_scene, resolve_placements, scene_catalog
@@ -104,7 +106,10 @@ def workshop_status(path=None):
     state = read_state(path)
     if read_json(path / "scene.json").get("staged_workshop") != state["workshop_id"]:
         raise ValueError("Staged scene belongs to a different workshop or is missing its marker")
-    return {"workshop": str(path), **state}
+    result = {"workshop": str(path), **state}
+    if "quality" in state or len(state["gate_evidence"]) == 2:
+        result["quality_status"] = quality_status(path, state)
+    return result
 
 
 def revisions(path):
@@ -160,6 +165,8 @@ def update_workshop_state(path, expected, updated):
             raise ValueError("Use the layout commands to change a gate")
         if updated.get("requires_new_layout") != current.get("requires_new_layout"):
             raise ValueError("Only a new layout can clear a required revision")
+        if updated.get("quality") != current.get("quality"):
+            raise ValueError("Use quality commands to update review gates")
         if read_json(path / "scene.json").get("staged_workshop") != current["workshop_id"]:
             raise ValueError("Staged scene belongs to a different workshop")
         atomic_state(path, updated)
@@ -209,6 +216,15 @@ def save_layout(path, plan, expected_revision):
         state["revisions"]["scene"] = None
         state["stage"] = "layout_review"
         state["gate_evidence"] = []
+        if "quality" in state:
+            q = quality(state)
+            state["quality"] = {
+                **q,
+                "sample": None,
+                "sample_verdict": None,
+                "finished_play": None,
+                "finished_visual": None,
+            }
         state.pop("requires_new_layout", None)
         state["pending_decision"] = plan["pending_decision"]
         validate_state(path, read_json(path / MARKER), state)
@@ -376,6 +392,15 @@ def check_material_change(path, state, scene, catalog, resolved):
     if play["material_changes"]:
         state["stage"] = "layout_review"
         state["gate_evidence"] = []
+        if "quality" in state:
+            q = quality(state)
+            state["quality"] = {
+                **q,
+                "sample": None,
+                "sample_verdict": None,
+                "finished_play": None,
+                "finished_visual": None,
+            }
         state["revisions"]["scene"] = None
         state["requires_new_layout"] = True
         state["pending_decision"] = "Revise the 2D plan to address: " + json.dumps(
@@ -401,6 +426,22 @@ def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad
         if state is not None:
             layout_ref = state["revisions"]["layout"]
             play = check_material_change(path, state, scene, catalog, resolved)
+            from terrain.quality import sample_pass
+
+            try:
+                sample_pass(path, state)
+                detail_ready = True
+            except (OSError, ValueError, KeyError):
+                detail_ready = False
+                if "quality" in state:
+                    q = quality(state)
+                    state["quality"] = {
+                        **q,
+                        "sample": None,
+                        "sample_verdict": None,
+                        "finished_play": None,
+                        "finished_visual": None,
+                    }
         history = revisions(path)
         prepare_output(path, output, [(working, scene), *history])
         materialize_history(history, output, openscad)
@@ -445,9 +486,17 @@ def checkpoint(path, output_dir, title, changes, feedback="", openscad="openscad
                 "layout_sha256": layout_ref["sha256"],
             }
             state["gate_evidence"] = state["gate_evidence"][:1]
-            state["pending_decision"] = (
-                f"Review rough revision {number} and decide whether to accept it for sample review."
-            )
+            if detail_ready:
+                state["quality"]["finished_play"] = None
+                state["quality"]["finished_visual"] = None
+                state["pending_decision"] = (
+                    f"Review finished play and visuals for revision {number}."
+                )
+            else:
+                state["pending_decision"] = (
+                    f"Review rough revision {number} and decide whether to accept it "
+                    "for sample review."
+                )
             validate_state(path, read_json(path / MARKER), state)
             atomic_state(path, state)
     return {
@@ -500,6 +549,16 @@ def accept_rough(path, revision, digest, confirmation):
         phrase = f"I accept rough revision {revision} for sample review"
         if confirmation != phrase:
             raise ValueError(f"Explicit confirmation required: {phrase}")
+        if "quality" in state:
+            q = quality(state)
+            if q["sample"] and q["sample"]["rough"]["sha256"] != digest:
+                state["quality"] = {
+                    **q,
+                    "sample": None,
+                    "sample_verdict": None,
+                    "finished_play": None,
+                    "finished_visual": None,
+                }
         state["gate_evidence"] = state["gate_evidence"][:1] + [
             {
                 "type": "rough_acceptance",
