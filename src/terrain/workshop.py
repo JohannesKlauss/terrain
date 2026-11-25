@@ -9,10 +9,12 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from terrain.layout import check_plan, sheet, verify_revision
 from terrain.library import catalog_roots, read_json, sha256, write_json
 from terrain.review import build_review, write_history
 from terrain.scene import assemble_scene, init_scene, resolve_placements, scene_catalog
 from terrain.staged import (
+    HELD_WORKSHOP,
     MARKER,
     atomic_state,
     guard_workshop,
@@ -69,17 +71,31 @@ def init_workshop(path, catalog, name, brief):
     write_json(path / "scene.json", scene)
     (path / "design.md").write_text(DESIGN_NOTES.format(brief=brief))
     atomic_state(path, state)
-    return {"workshop": path, "scene": path / "scene.json", "journal": path / "design.md",
-            "state": path / "workshop-state.json"}
+    return {
+        "workshop": path,
+        "scene": path / "scene.json",
+        "journal": path / "design.md",
+        "state": path / "workshop-state.json",
+    }
 
 
 def workshop_status(path=None):
     if path is None:
         scenes = Path("scenes")
-        candidates = sorted(p for p in scenes.iterdir() if p.is_dir() and (
-            (p / MARKER).exists() or (p / "workshop-state.json").exists()
-            or ((p / "scene.json").exists() and (p / "design.md").exists())
-        )) if scenes.is_dir() else []
+        candidates = (
+            sorted(
+                p
+                for p in scenes.iterdir()
+                if p.is_dir()
+                and (
+                    (p / MARKER).exists()
+                    or (p / "workshop-state.json").exists()
+                    or ((p / "scene.json").exists() and (p / "design.md").exists())
+                )
+            )
+            if scenes.is_dir()
+            else []
+        )
         return {"workshops": [str(p) for p in candidates]}
     path = Path(path).resolve()
     state = read_state(path)
@@ -118,7 +134,11 @@ def workshop_lock(path, *, state_update=False):
     try:
         if not state_update:
             guard_workshop(path)
-        yield
+        token = HELD_WORKSHOP.set(path)
+        try:
+            yield
+        finally:
+            HELD_WORKSHOP.reset(token)
     finally:
         lock.rmdir()
 
@@ -133,10 +153,99 @@ def update_workshop_state(path, expected, updated):
         validate_state(path, read_json(path / MARKER), updated)
         if any(updated[k] != current[k] for k in ("schema_version", "workshop_id", "slug")):
             raise ValueError("Workshop identity cannot change")
+        if any(updated[k] != current[k] for k in ("stage", "revisions", "gate_evidence")):
+            raise ValueError("Use the layout commands to change a gate")
         if read_json(path / "scene.json").get("staged_workshop") != current["workshop_id"]:
             raise ValueError("Staged scene belongs to a different workshop")
         atomic_state(path, updated)
     return updated
+
+
+def save_layout(path, plan, expected_revision):
+    """Save immutable comparison and invalidate any previous 3D approval."""
+    path = Path(path).resolve()
+    checks = check_plan(plan)
+    selected = plan.get("selected_option")
+    if selected is not None and (not isinstance(selected, str) or selected not in checks):
+        raise ValueError("Selected option is not in this comparison")
+    with workshop_lock(path, state_update=True):
+        state = read_state(path)
+        if read_json(path / "scene.json").get("staged_workshop") != state["workshop_id"]:
+            raise ValueError("Staged scene belongs to a different workshop")
+        current = state["revisions"]["layout"]
+        if (current["number"] if current else 0) != expected_revision:
+            raise ValueError("Layout changed; reload before saving")
+        folder = path / "layouts"
+        folder.mkdir(exist_ok=True)
+        existing = [
+            int(p.stem)
+            for p in folder.iterdir()
+            if p.suffix in (".json", ".svg") and p.stem.isdigit()
+        ]
+        number = max(existing, default=0) + 1
+        source, svg = folder / f"{number:04}.json", folder / f"{number:04}.svg"
+        record = {
+            "schema_version": 1,
+            "number": number,
+            "workshop_id": state["workshop_id"],
+            "plan": plan,
+            "checks": checks,
+        }
+        for target, content in (
+            (source, json.dumps(record, indent=2, ensure_ascii=False, allow_nan=False) + "\n"),
+            (svg, sheet(plan, checks, number)),
+        ):
+            with target.open("x") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+        reference = {"number": number, "sha256": sha256(source), "sheet_sha256": sha256(svg)}
+        state["revisions"]["layout"] = reference
+        state["stage"] = "layout_review"
+        state["gate_evidence"] = []
+        state["pending_decision"] = plan["pending_decision"]
+        validate_state(path, read_json(path / MARKER), state)
+        atomic_state(path, state)
+    return {"revision": reference, "source": source, "sheet": svg, "checks": checks}
+
+
+def approve_layout(path, revision, digest, confirmation):
+    """Record only a specific, unconditional confirmation of the current checked layout."""
+    path = Path(path).resolve()
+    with workshop_lock(path, state_update=True):
+        state = read_state(path)
+        reference = state["revisions"]["layout"]
+        if (
+            state["stage"] != "layout_review"
+            or not reference
+            or (reference["number"] != revision or reference["sha256"] != digest)
+        ):
+            raise ValueError("Approval must reference the current layout revision and digest")
+        if read_json(path / "scene.json").get("staged_workshop") != state["workshop_id"]:
+            raise ValueError("Staged scene belongs to a different workshop")
+        record = verify_revision(path, reference)
+        option = record["plan"].get("selected_option")
+        phrase = f"I approve 2D revision {revision} option {option} for 3D"
+        if not option or confirmation != phrase:
+            raise ValueError(f"Explicit confirmation required: {phrase}")
+        state["gate_evidence"] = [
+            {
+                "type": "layout_approval",
+                "workshop_id": state["workshop_id"],
+                "revision": revision,
+                "sha256": digest,
+                "sheet_sha256": reference["sheet_sha256"],
+                "option": option,
+                "confirmation": confirmation,
+            }
+        ]
+        state["stage"] = "3d"
+        state["pending_decision"] = (
+            "Develop the approved layout in 3D without materially changing it."
+        )
+        validate_state(path, read_json(path / MARKER), state)
+        atomic_state(path, state)
+    return {"workshop": path, "stage": state["stage"], "evidence": state["gate_evidence"][0]}
 
 
 def prepare_output(path, output, scenes):

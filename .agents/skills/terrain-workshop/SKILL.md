@@ -24,8 +24,9 @@ conversation. Summarize the current intent and the most important unresolved dec
 Read the persisted state rather than inferring approval from the journal. `workshop review`
 is only for existing 3D history, not discovery or resume.
 
-For a new project, start with the imagined playable moment: what do the players discover,
-who opposes them, and what should make this encounter memorable? Use the user's words.
+For a new project, start with what the players should see and what meaningful choice
+the encounter should give them. Reuse confirmed answers. Ask about opponents and
+constraints only when they affect the next choice. Use the user's words.
 Ask one focused question at a time, or at most three closely related questions. If a
 question tool is available, use it for blocking choices with plausible recommendations
 and room for the user's own answer.
@@ -53,7 +54,7 @@ Do not ask for game statistics that do not change the terrain. Do not require th
 to invent villain lore before showing anything. Unknown story details can stay open;
 unknown dimensions that determine fit must be asked or explicitly marked provisional.
 
-After the 2D gate is implemented and explicitly approved, for missing assets, index the existing collection if needed, search targeted candidates,
+After the 2D gate is explicitly approved, for missing assets, index the existing collection if needed, search targeted candidates,
 render actual mesh contact sheets, **open those sheets**, and inspect the chosen shapes.
 Filename/category matches are not visual review. Never upload the private collection.
 
@@ -75,8 +76,13 @@ cover, interaction access, verticality, villain movement and escape. Do not forc
 encounter to have two routes or the same cover pattern if its fiction calls for another
 trade-off. Explain intentional choke points and any resulting dead ends.
 
-For the first composition, briefly describe three genuinely different directions.
-Do not implement a 3D draft before explicit approval of the exact 2D layout revision.
+For the first composition, present two or three genuinely different top-down directions
+on one comparison sheet. Use the example and contract in `docs/workshop-state.md`.
+Take a pick, mix or feature move in ordinary chat. Record it in a new numbered 2D
+revision, keeping earlier revisions unchanged. Tell the GM what changed, what it clarified,
+and the next decision; show the SVG and pause. Do not create near-duplicate candidates
+or make successive revisions without feedback. Do not implement a 3D draft before
+explicit approval of the exact 2D layout revision.
 Prioritize the distinctive focal silhouette and playable negative space over scatter.
 Missing hero sculpts remain explicit gaps, not crude blocks presented as finished art.
 When an original custom piece is needed, use the printable-terrain Blender draft workflow.
@@ -96,7 +102,7 @@ uv run terrain workshop init scenes/<slug> --name "<name>" --brief "<current int
 
 Add `--catalog /absolute/path/catalog.json` when not using the default index.
 Initialization does not validate the catalog or invoke a renderer or model tool.
-Until the 2D approval workflow exists, stop before 3D work. Do not call standalone
+Before approval, do not call standalone
 `library preview`, `custom create`, `custom preview`, `generate`, mesh tools, or other
 model/render tools on behalf of a staged workshop before its 2D gate is approved.
 The agent edits the files; the user need not manipulate JSON.
@@ -107,6 +113,7 @@ edit the state file directly.
 - `scene.json`: current editable scene, pinned assets and structured encounter intent.
 - `workshop-state.json`: versioned authoritative resume and gate state; see
   `docs/workshop-state.md`. Never infer confirmation from `design.md` or legacy history.
+- `layouts/NNNN.json` and `layouts/NNNN.svg`: immutable checked 2D comparison and sheet.
 - `design.md`: living discussion journal, confirmed choices, assumptions, open questions,
   feedback and next step. Record meaningful user answers and their spatial consequences.
 - `revisions/NNNN.json`: immutable source snapshots created by checkpoints. Each records
@@ -124,6 +131,22 @@ Maintain stable placement IDs so feedback such as â€œmove `pressure-objective`â€
 unambiguous target. Use `terrain scene add scenes/<slug>/scene.json ...` for initial
 placements, and edit those placements to move/remove pieces. Keep pinned source hashes
 and rigid-body transforms. No scaling, fusion, source repair or invented inventory.
+
+Use `terrain workshop layout ...` to save each 2D iteration. Select the GM's chosen
+option in the plan, but do not confuse that pick with permission to start 3D. Show the
+revision number, digest, checks and comparison, then ask for explicit unconditional
+approval of that exact selected revision. Record only the GM's actual approval using
+`terrain workshop approve-layout`; its required confirmation phrase is documented in
+`docs/workshop-state.md`. Generic assent, silence, a choice, or conditional approval is
+not enough. If the GM uses different words, clarify and obtain the exact confirmation,
+never fabricate it. If library fit requires a material change, save a new 2D comparison
+and obtain fresh approval before continuing. The software records the statement, not
+the identity of the person who supplied it.
+
+Report active time and known usage where the environment exposes them, including retries
+and child calls where available. State what coverage is unknown; label estimates as
+unverified. There is no fixed round, time or dollar cap. Do not make new billable
+commitments without the user's permission.
 
 ## 5. Implement a small, visible iteration
 

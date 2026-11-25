@@ -7,11 +7,18 @@ from pathlib import Path
 from terrain.build import ROOT, BuildError, generate_model, generate_mvp
 from terrain.catalog import named_spec, part_contract
 from terrain.custom import approve_custom, create_custom, preview_custom
-from terrain.library import index_library, load_catalog, search_assets
+from terrain.library import index_library, load_catalog, read_json, search_assets
 from terrain.mesh import MeshRules, inspect_mesh
 from terrain.scene import add_custom_placement, add_placement, assemble_scene, init_scene
 from terrain.visual import preview_library
-from terrain.workshop import checkpoint, init_workshop, review_workshop, workshop_status
+from terrain.workshop import (
+    approve_layout,
+    checkpoint,
+    init_workshop,
+    review_workshop,
+    save_layout,
+    workshop_status,
+)
 
 DEFAULT_CATALOG = ROOT / "build" / "library" / "catalog.json"
 
@@ -88,6 +95,15 @@ def create_parser():
     start.add_argument("--no-library", action="store_true", help="Start with custom drafts only")
     status = workshop_commands.add_parser("status", help="Discover or resume staged workshops")
     status.add_argument("path", nargs="?", type=Path)
+    layout = workshop_commands.add_parser("layout", help="Save a checked 2D comparison")
+    layout.add_argument("path", type=Path)
+    layout.add_argument("--plan", type=Path, required=True)
+    layout.add_argument("--expect-revision", type=int, required=True)
+    approve = workshop_commands.add_parser("approve-layout")
+    approve.add_argument("path", type=Path)
+    approve.add_argument("--revision", type=int, required=True)
+    approve.add_argument("--sha256", required=True)
+    approve.add_argument("--confirmation", required=True)
     for action in ("checkpoint", "review"):
         sub = workshop_commands.add_parser(action)
         sub.add_argument("path", type=Path)
@@ -205,6 +221,10 @@ def run_workshop(args):
         )
     elif args.action == "status":
         result = workshop_status(args.path)
+    elif args.action == "layout":
+        result = save_layout(args.path, read_json(args.plan), args.expect_revision)
+    elif args.action == "approve-layout":
+        result = approve_layout(args.path, args.revision, args.sha256, args.confirmation)
     else:
         output = args.output_dir or ROOT / "build/workshops" / args.path.resolve().name
         if args.action == "checkpoint":

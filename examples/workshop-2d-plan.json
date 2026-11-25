@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "changes": "First comparison: a direct approach versus an offset cover position.",
+  "clarified": "The entry and altar remain visible in both directions.",
+  "pending_decision": "Choose or combine an approach, or move a named feature.",
+  "selected_option": "direct",
+  "dimensions": {
+    "outer_mm": [300, 250],
+    "footprint_limit_mm": [350, 300],
+    "playable_squares": [10, 8],
+    "game_pitch_mm": 25,
+    "mini_scale": 28,
+    "base_diameter_mm": 25,
+    "base_diameters_mm": [25, 32],
+    "viewer_ruler_mm": 50,
+    "library_pitch_mm": 25.4,
+    "confirmed": ["Maximum table space is 350 by 300 mm"],
+    "assumptions": ["25 mm game grid and 25 mm bases are provisional"],
+    "physical_unknowns": ["Actual model dimensions, stairs and connector fit"]
+  },
+  "options": [
+    {
+      "id": "direct",
+      "title": "Direct aisle",
+      "intent": "An exposed approach to a visible objective.",
+      "approach": "intentional_choke",
+      "features": [
+        {"id": "door", "kind": "entry", "label": "entry", "at": [0, 90], "size": [45, 45], "blocks": false},
+        {"id": "reveal", "kind": "reveal", "label": "altar revealed", "at": [45, 90], "size": [30, 30], "blocks": false},
+        {"id": "cover", "kind": "cover", "label": "low crates", "at": [120, 140], "size": [40, 40], "blocks": true},
+        {"id": "altar", "kind": "interaction", "label": "altar", "at": [240, 95], "size": [30, 30], "blocks": true, "approach_at": [220, 110]},
+        {"id": "dais", "kind": "height", "label": "raised 20 mm", "at": [200, 170], "size": [60, 40], "blocks": false},
+        {"id": "steps", "kind": "stairs", "label": "steps up", "at": [180, 170], "size": [20, 40], "blocks": false}
+      ],
+      "routes": [{"id": "aisle", "width_mm": 40, "points": [[25, 110], [220, 110]]}]
+    },
+    {
+      "id": "offset",
+      "title": "Offset cover",
+      "intent": "A lower flank changes the approach.",
+      "approach": "intentional_choke",
+      "features": [
+        {"id": "door", "kind": "entry", "label": "entry", "at": [0, 90], "size": [45, 45], "blocks": false},
+        {"id": "reveal", "kind": "reveal", "label": "altar revealed", "at": [45, 90], "size": [30, 30], "blocks": false},
+        {"id": "cover", "kind": "cover", "label": "low crates", "at": [120, 50], "size": [40, 40], "blocks": true},
+        {"id": "altar", "kind": "interaction", "label": "altar", "at": [240, 95], "size": [30, 30], "blocks": true, "approach_at": [220, 110]},
+        {"id": "dais", "kind": "height", "label": "raised 20 mm", "at": [200, 170], "size": [60, 40], "blocks": false},
+        {"id": "steps", "kind": "stairs", "label": "steps up", "at": [180, 170], "size": [20, 40], "blocks": false}
+      ],
+      "routes": [{"id": "flank", "width_mm": 40, "points": [[25, 110], [25, 200], [220, 200], [220, 110]]}]
+    }
+  ]
+}
