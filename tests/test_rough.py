@@ -1,5 +1,7 @@
 import copy
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -104,6 +106,132 @@ def test_checkpoint_exact_acceptance_and_invalidation(workshop, tmp_path):
     trimesh.creation.box(extents=[11, 10, 10]).export(models / "box.stl")
     with pytest.raises(ValueError, match="changed"):
         sample_review_status(path)
+
+
+def test_sample_and_finished_gates(workshop, tmp_path, monkeypatch):
+    from terrain.quality import build_sample, decide_finished, decide_sample
+
+    path, _, models = workshop
+    monkeypatch.setattr(
+        "terrain.visual.render_seated",
+        lambda source, destination, *a, **k: Image.new("RGB", (40, 30), "#777777").save(
+            destination
+        ),
+    )
+    arguments = (
+        path,
+        tmp_path / "sample-output",
+        "altar",
+        "dais",
+        "steps",
+        "Agreed reference",
+        "rough intent",
+        "surface detail",
+    )
+    with pytest.raises(ValueError, match="rough acceptance"):
+        build_sample(*arguments)
+    checkpoint(path, tmp_path / "out", "Rough", "Place all parts")
+    ref = workshop_status(path)["revisions"]["scene"]
+    with pytest.raises(ValueError, match="rough acceptance"):
+        build_sample(*arguments)
+    accept_rough(path, 1, ref["sha256"], "I accept rough revision 1 for sample review")
+    with pytest.raises(ValueError, match="sample"):
+        add_placement(path / "scene.json", "box.stl", "detail", [400, 400, 0])
+    result = build_sample(*arguments)
+    sample = result["sample"]
+    assert Path(result["review"]).is_file()
+    assert workshop_status(path)["quality_status"]["rough_acceptance"] == "accepted"
+    decide_sample(path, sample["number"], sample["sha256"], "rejected", "No", "Too plain")
+    assert workshop_status(path)["quality_status"]["sample_verdict"] == "rejected"
+    assert workshop_status(path)["quality_status"]["rough_acceptance"] == "accepted"
+    with pytest.raises(ValueError, match="sample"):
+        add_placement(path / "scene.json", "box.stl", "detail", [400, 400, 0])
+    with pytest.raises(ValueError, match="confirmation"):
+        decide_sample(path, sample["number"], sample["sha256"], "approved", "maybe")
+    decide_sample(path, sample["number"], sample["sha256"], "inconclusive", "Not sure", "Texture")
+    assert workshop_status(path)["quality_status"]["sample_verdict"] == "inconclusive"
+    decide_sample(
+        path,
+        sample["number"],
+        sample["sha256"],
+        "approved",
+        "I would print the board if it matched sample 1",
+    )
+    assert not workshop_status(path)["quality_status"]["handoff"]
+    checkpoint(path, tmp_path / "out", "Finished", "Complete detailing")
+    final = workshop_status(path)["revisions"]["scene"]
+    with pytest.raises(ValueError, match="play approval"):
+        decide_finished(path, 2, final["sha256"], "visual", "I approve finished board revision 2")
+    decide_finished(path, 2, final["sha256"], "play", "I approve finished play revision 2")
+    decide_finished(path, 2, final["sha256"], "visual", "I approve finished board revision 2")
+    assert workshop_status(path)["quality_status"]["handoff"]
+    fresh = subprocess.run(
+        [str(Path(sys.executable).parent / "terrain"), "workshop", "status", str(path)],
+        check=True, capture_output=True, text=True,
+    )
+    fresh_status = json.loads(fresh.stdout)["quality_status"]
+    assert fresh_status["rough_acceptance"] == "accepted (historical)"
+    assert fresh_status["sample_verdict"] == "approved"
+    assert fresh_status["finished_visual"] == "approved"
+    final_path = path / "revisions" / "0002.json"
+    snapshot_bytes = final_path.read_bytes()
+    final_path.write_bytes(snapshot_bytes + b" ")
+    with pytest.raises(ValueError, match="snapshot"):
+        workshop_status(path)
+    final_path.write_bytes(snapshot_bytes)
+    original = (path / "scene.json").read_bytes()
+    working = read_json(path / "scene.json")
+    working["brief"] = "Changed finished snapshot"
+    (path / "scene.json").write_text(json.dumps(working))
+    assert not workshop_status(path)["quality_status"]["handoff"]
+    (path / "scene.json").write_bytes(original)
+    trimesh.creation.box(extents=[11, 10, 10]).export(models / "box.stl")
+    assert not workshop_status(path)["quality_status"]["handoff"]
+
+
+def test_proxy_and_changed_sample_inputs_block_detail(workshop, tmp_path, monkeypatch):
+    from terrain.quality import build_sample, decide_sample
+
+    path, _, _ = workshop
+    monkeypatch.setattr(
+        "terrain.visual.render_seated",
+        lambda source, destination, *a, **k: Image.new("RGB", (40, 30), "#777777").save(
+            destination
+        ),
+    )
+    checkpoint(path, tmp_path / "out", "Rough", "Place all parts")
+    ref = workshop_status(path)["revisions"]["scene"]
+    accept_rough(path, 1, ref["sha256"], "I accept rough revision 1 for sample review")
+    sample = build_sample(path, tmp_path / "sample", "cover", "altar", "steps",
+                          "Reference", "Proxy", "Focal")["sample"]
+    with pytest.raises(ValueError, match="proxy focal"):
+        decide_sample(path, 1, sample["sha256"], "approved",
+                      "I would print the board if it matched sample 1")
+    scene = read_json(path / "scene.json")
+    scene["rough"]["clearance_height_mm"] += 1
+    (path / "scene.json").write_text(json.dumps(scene))
+    with pytest.raises(ValueError, match="Play inputs changed"):
+        decide_sample(path, 1, sample["sha256"], "rejected", "No", "Proxy")
+    assert workshop_status(path)["quality_status"]["rough_acceptance"] == "stale"
+
+
+def test_failed_sample_render_preserves_rough_acceptance(workshop, tmp_path, monkeypatch):
+    from terrain.quality import build_sample
+
+    path, _, _ = workshop
+    checkpoint(path, tmp_path / "out", "Rough", "Place all parts")
+    ref = workshop_status(path)["revisions"]["scene"]
+    accept_rough(path, 1, ref["sha256"], "I accept rough revision 1 for sample review")
+
+    def fail(*args, **kwargs):
+        raise ValueError("render failed")
+
+    monkeypatch.setattr("terrain.visual.render_seated", fail)
+    with pytest.raises(ValueError, match="render failed"):
+        build_sample(path, tmp_path / "sample", "altar", "dais", "steps",
+                     "Reference", "Intent", "Missing")
+    assert workshop_status(path)["quality_status"]["rough_acceptance"] == "accepted"
+    assert sample_review_status(path)["sample_review_ready"]
 
 
 def test_material_change_requires_new_layout(workshop, tmp_path):

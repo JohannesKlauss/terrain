@@ -11,6 +11,18 @@ Staged workshops must first obtain explicit approval of an exact 2D layout revis
 Never treat a draft, a successful render, or silence
 as artistic, print, or physical-fit approval.
 
+After current rough acceptance, build and show the one actual-mesh sample described in
+`docs/workshop-state.md`, including the focal piece, adjacent architecture, scale cue,
+agreed reference and seated perspective. Identify proxies and missing detail. Ask
+separately whether the GM would print the board if the rest matched the sample, and
+record their actual verdict and a mismatch when negative or inconclusive. Preserve the
+accepted layout after a failed sample. Never treat a placeholder as a finished focal
+piece. Do not detail until both current play and the explicit sample verdict pass.
+Checkpoint the finished board and obtain separate fresh finished-play and visual
+verdicts on the exact snapshot before handoff. Recheck affected gates when inputs or
+source bytes change. Sample or scene approval is not permission to run
+`terrain custom approve`, nor is it a billable commitment.
+
 Read `.agents/skills/printable-terrain/SKILL.md` and follow its library, licensing,
 source-hash, modelling, and physical-release rules. This workflow orchestrates that
 capability; it does not replace its modelling and approval gates.

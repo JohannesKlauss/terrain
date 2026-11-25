@@ -98,6 +98,32 @@ def render_source(source, destination, view, openscad="openscad", size=(400, 300
     return diagnostics
 
 
+def render_seated(source, destination, center, distance_mm, openscad="openscad"):
+    """Render a neutral perspective at the supplied camera distance in millimetres."""
+    destination = Path(destination)
+    camera = ",".join(str(v) for v in (*center, 75, 0, 25, distance_mm))
+    diagnostics = run_openscad(
+        [
+            "--preview",
+            "--projection=p",
+            f"--camera={camera}",
+            "--imgsize=1200,900",
+            "--colorscheme=Tomorrow",
+            "-o",
+            str(destination),
+            str(source),
+        ],
+        openscad,
+    )
+    if re.search(r"^(WARNING|ERROR):", diagnostics, re.MULTILINE):
+        raise BuildError(f"Sample preview diagnostics:\n{diagnostics}")
+    if not destination.is_file():
+        raise BuildError("Sample seated view was not produced")
+    with Image.open(destination) as picture:
+        if all(high - low < 2 for low, high in picture.convert("RGB").getextrema()):
+            raise BuildError("Sample seated view is blank")
+
+
 def asset_preview(catalog, asset, output_dir, view, renderer_version, openscad):
     output_dir = Path(output_dir)
     cache = output_dir / "thumbnails"
