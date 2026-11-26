@@ -64,7 +64,15 @@ def create(grid):
     bpy.ops.wm.save_as_mainfile(filepath=str(Path("baseline.blend").resolve()))
 
 
-def stage_candidate():
+def stage_candidate(sealed):
+    # The same candidate worker must be unable to rewrite any sealed baseline input.
+    for filename in ("baseline.blend", "baseline.json", "baseline-frame.stl", "scope.json"):
+        try:
+            with (sealed / filename).open("ab"):
+                raise RuntimeError(f"sealed input was writable: {filename}")
+        except PermissionError:
+            pass
+    print("M0_BASELINE_REWRITE_DENIED", flush=True)
     # A known geometry delta to exercise staging, not a response to the reference.
     for vertex in bpy.data.objects["frame"].data.vertices:
         if vertex.co.z == 22:
@@ -117,8 +125,8 @@ if __name__ == "__main__":
     match sys.argv[sys.argv.index("--") + 1 :]:
         case ["create", grid] if 1 <= int(grid) <= 16:
             create(int(grid))
-        case ["stage"]:
-            stage_candidate()
+        case ["stage", sealed]:
+            stage_candidate(Path(sealed))
         case ["inspect", "baseline" | "candidate" as name]:
             inspect(name)
         case _:

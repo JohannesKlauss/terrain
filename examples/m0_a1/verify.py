@@ -6,6 +6,7 @@ import hashlib
 import json
 import platform
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -112,13 +113,13 @@ def check_export(path, height):
     return mesh.bounds.tolist()
 
 
-def verify(root, grid, output):
+def verify(root, grid, output, check_cancelled):
     inputs, stage, control = [root / name for name in ("inputs", "stage", "control")]
     for path in (inputs, stage, control):
         path.mkdir(mode=0o700)
     for name in ("blender_fixture.py", "worker_canary.py"):
         shutil.copyfile(HERE / name, inputs / name)
-    worker = OfflineWorker(inputs, stage)
+    worker = OfflineWorker(inputs, stage, check_cancelled)
     version = worker.run(["--version"]).splitlines()[0]
     require(version.startswith("Blender "), "Blender version not reported")
     controls = worker.controls(control)
@@ -134,19 +135,15 @@ def verify(root, grid, output):
     digest(made)
     accepted = inputs / made.name
     made.replace(accepted)
-    baseline_sha = digest(accepted)
     worker.fixture("inspect", "baseline", project=accepted)
-    worker.fixture("stage", project=accepted)
-    candidate = stage / "candidate.blend"
-    digest(candidate)
-    worker.fixture("inspect", "candidate", project=candidate)
-    require(digest(accepted) == baseline_sha, "accepted fixture was modified")
-    require([digest(path) for path in canonical] == control_digests, "canonical state changed")
-
-    a, b = [stage / f"{name}.json" for name in ("baseline", "candidate")]
-    baseline, revised = snapshot(a), snapshot(b)
-    validate_scope(baseline, revised)
-    negative_controls(baseline, revised)
+    a, stl_a, scope_path = [
+        inputs / name for name in ("baseline.json", "baseline-frame.stl", "scope.json")
+    ]
+    for path in (a, stl_a):
+        (stage / path.name).replace(path)
+    baseline = snapshot(a)
+    require("frame" in baseline, "fixture target missing")
+    bounds = {"baseline": check_export(stl_a, 22)}
     assets = len({obj["asset"] for obj in baseline.values()})
     instances = len(baseline)
     triangles = sum(len(obj["triangles"]) for obj in baseline.values())
@@ -154,36 +151,63 @@ def verify(root, grid, output):
         (assets, instances, triangles) == (5, 5 + grid**2, 80 + 12 * grid**2),
         "unexpected representative scene counts",
     )
-    stl_a, stl_b = [stage / f"{name}-frame.stl" for name in ("baseline", "candidate")]
-    bounds = {"baseline": check_export(stl_a, 22), "candidate": check_export(stl_b, 23)}
-    view = stage / "compare.html"
-    viewer(view, baseline, revised)
-    files = [accepted, candidate, ref, prompt, a, b, stl_a, stl_b, view]
-    manifest = {
-        "fixture": "m0-a1-frame-v1",
-        "provenance": "Original generated fixture geometry, reference and prompt; no asset inputs",
+    scope = {
         "unit": "mm",
         "target": "frame",
         "allowed_bounds_mm": ENVELOPE,
         "export_tolerance_mm": EXPORT_TOLERANCE_MM,
         "protected_ids": sorted(baseline.keys() - {"frame"}),
         "interface": "Frame lands at Z=0; preserve its base corners and fixed aperture",
+    }
+    scope_path.write_text(json.dumps(scope, indent=2) + "\n", encoding="utf-8")
+    sealed = (accepted, a, stl_a, scope_path)
+    sealed_digests = tuple(digest(path) for path in sealed)
+
+    ran = worker.fixture("stage", str(inputs), project=accepted)
+    require("M0_BASELINE_REWRITE_DENIED" in ran.splitlines(), "sealed rewrite control missing")
+    candidate = stage / "candidate.blend"
+    digest(candidate)
+    worker.fixture("inspect", "candidate", project=candidate)
+    require(tuple(digest(path) for path in sealed) == sealed_digests, "sealed baseline changed")
+    require([digest(path) for path in canonical] == control_digests, "canonical state changed")
+    b, stl_b = [stage / name for name in ("candidate.json", "candidate-frame.stl")]
+    revised = snapshot(b)
+    validate_scope(baseline, revised)
+    negative_controls(baseline, revised)
+    bounds["candidate"] = check_export(stl_b, 23)
+    view = stage / "compare.html"
+    viewer(view, baseline, revised)
+    files = [*sealed, candidate, ref, prompt, b, stl_b, view]
+    manifest = {
+        "fixture": "m0-a1-frame-v1",
+        "provenance": "Original generated fixture geometry, reference and prompt; no asset inputs",
+        **scope,
         "profile": {"grid": grid, "assets": assets, "instances": instances, "triangles": triangles},
         "toolchain": {"blender": version, "macos": platform.mac_ver()[0]},
         "policy_sha256": hashlib.sha256(POLICY.encode()).hexdigest(),
         "artifact_sha256": {path.name: digest(path) for path in files},
         "stl_bounds_mm": bounds,
         "offline_controls": controls,
+        "sealed_baseline_rewrite_denied": True,
         "cancelled_and_reaped": True,
-        "storage_probe": storage_probe(control, baseline_sha),
+        "storage_probe": storage_probe(control, sealed_digests[0]),
     }
+    check_cancelled()
     if output is not None:
-        output.mkdir(mode=0o700)
-        for path in files:
-            shutil.copyfile(path, output / path.name)
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-        )
+        with tempfile.TemporaryDirectory(prefix=".m0-evidence-", dir=output.parent) as path:
+            staged = Path(path) / "result"
+            staged.mkdir(mode=0o700)
+            for artifact in files:
+                check_cancelled()
+                shutil.copyfile(artifact, staged / artifact.name)
+            (staged / "manifest.json").write_text(
+                json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+            )
+            require(
+                not output.exists() and not output.is_symlink(), "output directory already exists"
+            )
+            check_cancelled()
+            staged.rename(output)
     print(f"PASS {version}; allowed fixture reads and candidate writes; eight blocked operations")
     print("PASS Blender cancelled and reaped; accepted/canonical/approval bytes unchanged")
     print("PASS real STL in millimetres, protected geometry, and three rejected scope controls")
@@ -196,13 +220,29 @@ def main():
     parser.add_argument("--grid", type=int, choices=range(1, 17), default=1)
     parser.add_argument("--output", type=Path, help="new directory for cleared fixture evidence")
     args = parser.parse_args()
+    cancelled = False
+
+    def request_stop(signum, frame):
+        # Defer unwinding until a checkpoint so a just-launched child is owned by launch().
+        nonlocal cancelled
+        cancelled = True
+
+    def check_cancelled():
+        require(not cancelled, "supervisor cancelled by SIGTERM")
+
+    previous = signal.signal(signal.SIGTERM, request_stop)
     try:
-        require(not args.output or not args.output.exists(), "output directory already exists")
+        require(
+            not args.output or not (args.output.exists() or args.output.is_symlink()),
+            "output directory already exists",
+        )
         with tempfile.TemporaryDirectory(prefix="terrain-m0-a1-") as path:
-            verify(Path(path).resolve(), args.grid, args.output)
+            verify(Path(path).resolve(), args.grid, args.output, check_cancelled)
     except (Blocked, OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"BLOCKED: {error}", file=sys.stderr)
         return 1
+    finally:
+        signal.signal(signal.SIGTERM, previous)
     return 0
 
 

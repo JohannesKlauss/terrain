@@ -34,10 +34,11 @@ uv run --no-sync python examples/m0_a1/verify.py --grid 16 --output build/m0-a1
 uv run --no-sync pytest -q
 ```
 
-Open `build/m0-a1/compare.html` locally to see matched oblique and top views. Click
-geometry or **Select frame** to highlight its stable ID in both revisions. The default
-grid is better for close inspection. To retain that run, omit `--grid 16` and use a
-different new output directory.
+Open `build/m0-a1/compare.html` locally to see matched oblique and top views.
+**Highlight frame** marks its stable ID in both revisions. Geometry clicks do not
+select components: SVG triangle sorting does not depth-test occlusion. The default
+grid is better for close inspection. To retain that run, omit `--grid 16` and use
+a different new output directory.
 
 ## Fixture and checks
 
@@ -56,20 +57,27 @@ different new output directory.
   exactly. The manifest records evidence SHA-256s, tool/profile versions and scope.
   Reproducibility uses normalized geometry JSON and PNG bytes, not cross-run Blender
   container byte equality.
+  The verifier validates the evaluated baseline snapshot and millimetre export
+  before candidate execution, and keeps them with the accepted Blender file and
+  scope contract in worker-read-only inputs. The later Blender candidate process
+  must be denied write access to all four.
 - Before running the fixture, an independent positive control proves the benign
   operations can work. The same canary code under Blender must allow fixture reads
   and stage writes, deny input changes, outside reads and cross-boundary symlink access,
   reject writes to synthetic canonical and approval files, and deny a loopback
-  connection and spawning another executable. The supervisor checks protected bytes
-  and tests cancellation by reaping a ready Blender process before any candidate exists.
+  connection and spawning another executable. The listener must accept no
+  connection, not merely receive no bytes. The supervisor checks protected bytes
+  and reaps a ready Blender canary on cancellation. A regression also stops the
+  supervisor with `SIGTERM` during candidate staging and checks that it reaps the
+  worker and discards scratch without publishing partial evidence.
 
 ## Foundation evidence and limits
 
 | Boundary | What this probe tests | What it does not establish |
 | --- | --- | --- |
 | Launch/shell | A local Python supervisor launches fixed headless Blender operations, captures results, and kills/reaps a ready worker. The browser opens an offline evidence file with no worker controls. | No desktop shell, app-owned consent or worker supervision from the UI. No browser-only substitute for the process boundary. |
-| Renderer | An SVG projection of evaluated meshes tests stable component IDs, shared camera extents and linked selection across revisions. The existing `src/terrain/review.py` WebGL inspector is another baseline for orbit and full scene inspection, not tested by this fixture. | No GPU renderer comparison, generalized 3D picking, production renderer choice, or performance claim. |
-| Storage | A staged file remains invisible until atomic replacement, but the file probe does not fence another writer. SQLite tests a blocked second writer, rollback and a stale revision predicate using the real baseline digest. | No product store choice, power-loss durability claim or app-owned approval API. The Blender worker sees no such API; the tested result is denial of synthetic filesystem writes. |
+| Renderer | An SVG projection of evaluated meshes tests stable component IDs, shared camera extents and an explicit linked frame highlight. The existing `src/terrain/review.py` WebGL inspector is another baseline for orbit and full scene inspection, not tested by this fixture. | SVG geometry picking is disabled because occlusion is not depth-tested. No GPU renderer comparison, production renderer choice, or performance claim. |
+| Storage | A staged file remains invisible until atomic replacement, but the file probe does not fence another writer. SQLite tests a blocked second writer, rollback and rejection of a mismatched placeholder revision. | No formerly accepted request becoming stale, no accepted-revision reopen, and no product store choice, power-loss durability claim or app-owned approval API. The Blender worker sees no such API; the tested result is denial of synthetic filesystem writes. |
 | Isolation | Kernel-enforced checks on this installed macOS version. The viewer and host validation are not inside the worker profile. | Not a sandbox for an agent, arbitrary generated Python, unknown `.blend` files, or other hosts. OS metadata and required runtime reads remain visible. The Apple-private `dyld-support.sb` bootstrap can change after OS updates; rerun controls and stop on failure. No unsandboxed Blender fallback. |
 
 Keep live provider transport, agent tools, arbitrary generated Blender scripts and any

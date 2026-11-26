@@ -52,7 +52,7 @@ def storage_probe(control, baseline_sha):
 
 
 def viewer(path, baseline, candidate):
-    """Make two local SVG comparisons with shared extents and stable component picking."""
+    """Make two local SVG comparisons with shared extents and an explicit frame highlight."""
 
     def projection(vertex, mode):
         x, y, z = vertex
@@ -101,30 +101,27 @@ def viewer(path, baseline, candidate):
 body { font: 16px system-ui; margin: 24px; background: #162028; color: #f3f5f6 }
 figure { display: inline-block; width: min(43%, 520px); margin: 0 16px 0 0 }
 svg { width: 100%; background: #253440; margin-top: 8px }
-polygon { fill: #8294a4; stroke: #253440; stroke-width: 0.15; cursor: pointer }
+polygon { fill: #8294a4; stroke: #253440; stroke-width: 0.15 }
 polygon[data-part="frame"] { fill: #b28358 }
 polygon.selected { fill: #f6bf46 }
 button { margin-right: 8px }
 </style>
 <h1>M0-A1 offline fixture probe</h1>
 <p>Fixed synthetic before/after. Not an agent edit or product UI.</p>
-<button id="view">Switch to top view</button><button id="frame">Select frame</button>
-<p><output id="selected">No component selected</output></p>
+<p>Geometry picking is disabled: the SVG projection does not depth-test occlusion.</p>
+<button id="view">Switch to top view</button><button id="frame">Highlight frame</button>
+<p><output id="selected">No component highlighted</output></p>
 """
         + compare("oblique")
         + compare("top")
         + """<script>
 const status = document.getElementById("selected");
 function select(part) {
-  status.value = `Selected: ${part}`;
+  status.value = `Highlighted: ${part}`;
   for (const face of document.querySelectorAll("[data-part]")) {
     face.classList.toggle("selected", face.dataset.part === part);
   }
 }
-document.addEventListener("click", (event) => {
-  const face = event.target.closest("[data-part]");
-  if (face) select(face.dataset.part);
-});
 document.getElementById("frame").onclick = () => select("frame");
 document.getElementById("view").onclick = (event) => {
   const top = document.getElementById("top");

@@ -14,8 +14,16 @@ def append(path):
 
 
 def connect(port):
-    with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
-        client.sendall(b"m0-synthetic")
+    try:
+        client = socket.create_connection(("127.0.0.1", port), timeout=2)
+    except PermissionError:
+        return "denied", "not_attempted"
+    with client:
+        try:
+            client.sendall(b"m0-synthetic")
+        except OSError:
+            return "allowed", "failed"
+    return "allowed", "sent"
 
 
 def probe(read_only, control, port):
@@ -29,7 +37,6 @@ def probe(read_only, control, port):
         "linked_outside_write": lambda: append(path / "outside-link"),
         "canonical_write": lambda: append(control / "canonical.json"),
         "approval_write": lambda: append(control / "approvals.json"),
-        "loopback": lambda: connect(port),
         "child_exec": lambda: subprocess.run(["/usr/bin/true"], check=True, timeout=2),
     }
     results = {}
@@ -42,6 +49,7 @@ def probe(read_only, control, port):
             results[name] = "allowed"
     results["synthetic_home"] = Path(os.environ["HOME"]) == path / "home"
     results["marker_present"] = "M0_A1_SYNTHETIC_MARKER" in os.environ
+    results["loopback_connect"], results["loopback_send"] = connect(port)
     return results
 
 

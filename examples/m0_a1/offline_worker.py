@@ -42,8 +42,21 @@ def require(condition, message):
         raise Blocked(message)
 
 
+def observe_loopback(listener):
+    try:
+        peer, _ = listener.accept()
+    except TimeoutError:
+        return False, None
+    with peer:
+        peer.settimeout(0.2)
+        try:
+            return True, peer.recv(32)
+        except TimeoutError:
+            return True, None
+
+
 class OfflineWorker:
-    def __init__(self, inputs, stage):
+    def __init__(self, inputs, stage, check_cancelled):
         require(
             platform.system() == "Darwin" and platform.machine() == "arm64",
             "only the macOS arm64 fixture route is supported",
@@ -52,6 +65,7 @@ class OfflineWorker:
             BLENDER.is_file() and SANDBOX.is_file(), "installed Blender or sandbox-exec missing"
         )
         self.inputs, self.stage = inputs, stage
+        self.check_cancelled = check_cancelled
         for name in ("home", "tmp"):
             (stage / name).mkdir()
         self.env = {
@@ -74,7 +88,8 @@ class OfflineWorker:
             BLENDER,
             *args,
         ]
-        with subprocess.Popen(
+        self.check_cancelled()
+        process = subprocess.Popen(
             command,
             cwd=self.stage,
             env=self.env,
@@ -84,20 +99,36 @@ class OfflineWorker:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-        ) as process:
+        )
+        try:
+            yield process
+        finally:
             try:
-                yield process
-            finally:
                 if process.poll() is None:
                     with suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
+            finally:
+                process.stdout.close()
 
-    def run(self, args):
+    def run(self, args, operation="version"):
         with self.launch(args) as process:
-            output, _ = process.communicate(timeout=30)
+            deadline = time.monotonic() + 30
+            while True:
+                self.check_cancelled()
+                remaining = deadline - time.monotonic()
+                require(remaining > 0, f"offline Blender {operation} timed out")
+                try:
+                    output, _ = process.communicate(timeout=min(0.1, remaining))
+                except subprocess.TimeoutExpired:
+                    continue
+                break
+            self.check_cancelled()
             detail = output.replace(str(self.stage.parent), "<scratch>").strip()[-450:]
-            require(process.returncode == 0, f"offline Blender exit {process.returncode}: {detail}")
+            require(
+                process.returncode == 0,
+                f"offline Blender {operation} exit {process.returncode}: {detail}",
+            )
             return output
 
     def fixture(self, *args, project=None):
@@ -111,7 +142,8 @@ class OfflineWorker:
                 str(self.inputs / "blender_fixture.py"),
                 "--",
                 *args,
-            ]
+            ],
+            " ".join(args[:2]) if args[0] == "inspect" else args[0],
         )
 
     def controls(self, control):
@@ -140,7 +172,8 @@ class OfflineWorker:
                             "--python",
                             str(self.inputs / "worker_canary.py"),
                             *args,
-                        ]
+                        ],
+                        "offline controls",
                     )
                 else:
                     # Positive control runs only this fixed, known fixture script, never Blender.
@@ -156,16 +189,10 @@ class OfflineWorker:
                     ).stdout
                 lines = [line[10:] for line in output.splitlines() if line.startswith("M0_CANARY ")]
                 require(len(lines) == 1, "canary did not report exactly one result")
-                try:
-                    peer, _ = listener.accept()
-                    with peer:
-                        peer.settimeout(0.2)
-                        payload = peer.recv(32)
-                except TimeoutError:
-                    payload = b""
-                return json.loads(lines[0]), payload
+                accepted, payload = observe_loopback(listener)
+                return json.loads(lines[0]), accepted, payload
 
-        positive, received = trial(False)
+        positive, accepted, received = trial(False)
         allowed = {"input_read", "stage_write"}
         denied = {
             "input_write",
@@ -174,11 +201,13 @@ class OfflineWorker:
             "linked_outside_write",
             "canonical_write",
             "approval_write",
-            "loopback",
+            "loopback_connect",
             "child_exec",
         }
         require(
-            received == b"m0-synthetic"
+            accepted
+            and received == b"m0-synthetic"
+            and positive["loopback_send"] == "sent"
             and all(positive.get(name) == "allowed" for name in allowed | denied)
             and positive["marker_present"] is True,
             "broken synthetic positive control",
@@ -186,9 +215,10 @@ class OfflineWorker:
         (self.stage / "canary.out").unlink()
         for path, value in files.items():
             path.write_bytes(value)
-        actual, received = trial(True)
+        actual, accepted, _ = trial(True)
         require(
-            not received
+            not accepted
+            and actual["loopback_send"] == "not_attempted"
             and all(actual.get(name) == "allowed" for name in allowed)
             and all(actual.get(name) == "denied" for name in denied)
             and actual["synthetic_home"] is True
@@ -200,6 +230,7 @@ class OfflineWorker:
             and all(path.read_bytes() == value for path, value in files.items()),
             "synthetic control bytes changed",
         )
+        actual["loopback_accepted"] = accepted
         return actual
 
     def cancellation(self):
@@ -207,6 +238,7 @@ class OfflineWorker:
         with self.launch([*BASE, "--python-exit-code", "1", "--python-expr", code]) as process:
             deadline = time.monotonic() + 10
             while not (self.stage / "ready").is_file() and process.poll() is None:
+                self.check_cancelled()
                 require(time.monotonic() < deadline, "sandboxed Blender did not become ready")
                 time.sleep(0.02)
             require(process.poll() is None, "sandboxed Blender exited before cancellation")
