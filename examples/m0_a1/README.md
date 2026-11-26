@@ -53,8 +53,12 @@ uv run --no-sync python examples/m0_a1/app.py
 Open the printed `127.0.0.1` URL in a local browser. Choose **Run fixed Blender
 edit** to run the trusted synthetic operation, observe progress, and open the
 paired comparators once the candidate is staged. Start another run and use **Cancel
-staging** while it is active; the previous preview remains available. Stop the
-shell with Ctrl+C. No provider, file upload, arbitrary Python, approval, or commit
+staging** while it is active; a confirmed stop discards job scratch and leaves the
+previous preview unchanged. Ctrl+C or `SIGTERM` stops the shell. Repeated stop
+signals do not interrupt cleanup. If the worker cannot be confirmed reaped,
+the shell does not claim cancellation, disables further runs for that session,
+and exits nonzero on shutdown. Verify the old worker is gone before starting
+another shell. No provider, file upload, arbitrary Python, approval, or commit
 route is present. This shell listens only on loopback and validates mutation origin,
 intent header and request shape. It does not authenticate local processes.
 

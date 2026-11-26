@@ -2,14 +2,16 @@ import hashlib
 import json
 import os
 import platform
+import selectors
 import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from http.client import HTTPConnection
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -249,6 +251,25 @@ raise SystemExit(verify.main())
 def test_app_stages_real_candidate_and_preserves_it_on_cancel(monkeypatch):
     monkeypatch.syspath_prepend(str(VERIFIER.parent))
     from app import Shell, Stager
+    from offline_worker import OfflineWorker
+
+    active = []
+    hold_stage = threading.Event()
+    launch = OfflineWorker.launch
+
+    @contextmanager
+    def hold_active_stage(worker, args):
+        hold = hold_stage.is_set() and "--" in args and args[args.index("--") + 1] == "stage"
+        if hold:
+            index = args.index("--")
+            code = 'from pathlib import Path; import time; Path("active").touch(); time.sleep(10)'
+            args = args[:index] + ["--python-expr", code] + args[index:]
+        with launch(worker, args) as child:
+            if hold:
+                active.append((child, worker.stage))
+            yield child
+
+    monkeypatch.setattr(OfflineWorker, "launch", hold_active_stage)
 
     stager = Stager()
     with Shell(stager) as shell:
@@ -293,13 +314,28 @@ def test_app_stages_real_candidate_and_preserves_it_on_cancel(monkeypatch):
             assert request("POST", "/cancel/0", headers)[0] == 409
             completed = wait("staged")
             assert len(completed["candidate"]) == 64
-            assert b"depth-buffer probe" in request("GET", "/depth")[1]
-            assert b"Geometry picking is disabled" in request("GET", "/svg")[1]
+            prior_views = {route: request("GET", route) for route in ("/depth", "/svg")}
+            assert b"depth-buffer probe" in prior_views["/depth"][1]
+            assert b"Geometry picking is disabled" in prior_views["/svg"][1]
+            hold_stage.set()
             assert request("POST", "/run", headers)[0] == 202
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and not (
+                active and (active[0][1] / "active").is_file()
+            ):
+                assert state()["status"] == "running"
+                time.sleep(0.02)
+            assert len(active) == 1
+            child, stage = active[0]
+            assert (stage / "active").is_file() and (stage / "candidate.blend").is_file()
+            assert child.poll() is None
             assert request("POST", "/cancel/1", headers)[0] == 409
             assert request("POST", "/cancel/2", headers)[0] == 202
             cancelled = wait("cancelled")
             assert cancelled["candidate"] == completed["candidate"]
+            assert child.poll() == -signal.SIGKILL
+            assert not stage.parents[1].exists()
+            assert prior_views == {route: request("GET", route) for route in prior_views}
         finally:
             shell.shutdown()
             thread.join(timeout=5)
@@ -324,3 +360,189 @@ def test_app_worker_failure_stops_without_candidate(monkeypatch):
     finally:
         stager.close()
     assert not stager.start()
+
+
+def test_unconfirmed_worker_reap_latches_failure_and_preserves_preview(monkeypatch):
+    monkeypatch.syspath_prepend(str(VERIFIER.parent))
+    import offline_worker
+    from app import Stager
+
+    active = threading.Event()
+    fixture_runs = []
+    signals = []
+    waits = []
+
+    class Unreaped:
+        pid = 123  # Only a sentinel; the test replaces killpg.
+        stdout = StringIO()
+
+        def poll(self):
+            return None
+
+        def wait(self, timeout):
+            waits.append(timeout)
+            raise subprocess.TimeoutExpired("synthetic worker", timeout)
+
+    child = Unreaped()
+    monkeypatch.setattr(offline_worker.subprocess, "Popen", lambda *args, **kwargs: child)
+    monkeypatch.setattr(offline_worker.os, "killpg", lambda *args: signals.append(args))
+
+    def fixture(work, grid, output, check, progress, *, probe_storage):
+        fixture_runs.append(grid)
+        if len(fixture_runs) == 1:
+            output.mkdir()
+            (output / "compare.html").write_bytes(b"prior SVG")
+            (output / "depth.html").write_bytes(b"prior depth")
+            return {"artifact_sha256": {"candidate.blend": "a" * 64}}
+        worker = offline_worker.OfflineWorker.__new__(offline_worker.OfflineWorker)
+        worker.inputs = worker.stage = work
+        worker.check_cancelled = check
+        worker.env = {}
+        with worker.launch([]):
+            active.set()
+            assert stager.stop.wait(timeout=5)
+            check()
+
+    stager = Stager(fixture)
+    try:
+        assert stager.start()
+        stager.thread.join(timeout=5)
+        assert stager.state()["status"] == "staged"
+        before = stager.state()["candidate"]
+        assert stager.start() and active.wait(5)
+        assert stager.cancel("2")
+        stager.thread.join(timeout=5)
+        state = stager.state()
+        assert state["status"] == "cleanup_failed"
+        assert state["candidate"] == before == "a" * 64
+        assert stager.view("/depth") == b"prior depth"
+        assert signals == [(child.pid, signal.SIGKILL)]
+        assert waits == [5]
+        assert child.stdout.closed
+        assert not stager.start()
+    finally:
+        assert not stager.close()
+    assert not stager.close()
+
+
+def test_app_shutdown_deadline_latches_failure_even_on_late_completion(monkeypatch):
+    monkeypatch.syspath_prepend(str(VERIFIER.parent))
+    from app import Stager
+
+    active, release = threading.Event(), threading.Event()
+
+    def fixture(work, grid, output, check, progress, *, probe_storage):
+        active.set()
+        release.wait(timeout=5)
+        check()
+
+    stager = Stager(fixture)
+    try:
+        assert stager.start() and active.wait(5)
+        assert not stager.close(timeout=0.01)
+        assert stager.state()["status"] == "cleanup_failed"
+        assert not stager.start()
+    finally:
+        release.set()
+        assert not stager.close()
+    assert stager.state()["status"] == "cleanup_failed"
+    assert stager.state()["candidate"] is None
+
+
+@needs_blender
+def test_app_repeated_stop_waits_for_active_blender_reap(tmp_path):
+    # Pause only this test's fixed Blender staging operation and its bounded cleanup.
+    harness = """
+import sys
+import time
+from contextlib import contextmanager
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import app
+from offline_worker import OfflineWorker
+
+markers = Path(sys.argv[2])
+launch = OfflineWorker.launch
+hold_worker = ('import os,time; from pathlib import Path; '
+               'Path("active").write_text(str(os.getpid())); time.sleep(8)')
+
+@contextmanager
+def delayed_cleanup(worker, args):
+    if "--" not in args or args[args.index("--") + 1] != "stage":
+        with launch(worker, args) as child:
+            yield child
+        return
+    boundary = args.index("--")
+    args = args[:boundary] + ["--python-expr", hold_worker] + args[boundary:]
+    child = None
+    try:
+        with launch(worker, args) as child:
+            try:
+                yield child
+            finally:
+                assert child.poll() is None
+                (markers / "cleanup-started").touch()
+                deadline = time.monotonic() + 2
+                while not (markers / "release-cleanup").exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+    finally:
+        if child is not None:
+            (markers / "return-code").write_text(str(child.returncode))
+
+OfflineWorker.launch = delayed_cleanup
+sys.argv = ["app.py"]
+raise SystemExit(app.main())
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-I", "-c", harness, str(VERIFIER.parent), str(tmp_path)],
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "TMPDIR": str(tmp_path)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            assert selector.select(timeout=15), "App did not become ready"
+            address = process.stdout.readline().strip().removeprefix("http://").rstrip("/")
+        connection = HTTPConnection(address, timeout=3)
+        try:
+            connection.request(
+                "POST",
+                "/run",
+                headers={"Origin": f"http://{address}", "X-M0-Action": "fixed-fixture"},
+            )
+            assert connection.getresponse().status == 202
+        finally:
+            connection.close()
+        deadline = time.monotonic() + 15
+        active = None
+        while process.poll() is None and time.monotonic() < deadline:
+            active = next(tmp_path.glob("terrain-m0-app-*/work/stage/active"), None)
+            if active and active.read_text().isdecimal():
+                break
+            time.sleep(0.02)
+        assert active and (active.parent / "candidate.blend").is_file()
+        os.kill(int(active.read_text()), 0)
+        process.send_signal(signal.SIGTERM)
+        deadline = time.monotonic() + 3
+        while not (tmp_path / "cleanup-started").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert (tmp_path / "cleanup-started").exists()
+        process.send_signal(signal.SIGINT)
+        process.send_signal(signal.SIGTERM)
+        (tmp_path / "release-cleanup").touch()
+        _, stderr = process.communicate(timeout=10)
+        assert process.returncode == 0, stderr
+        assert (tmp_path / "return-code").read_text() == str(-signal.SIGKILL)
+        assert not list(tmp_path.glob("terrain-m0-app-*"))
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+        process.stdout.close()
+        process.stderr.close()

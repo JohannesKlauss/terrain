@@ -37,6 +37,10 @@ class Blocked(RuntimeError):
     """A prerequisite or observed safety check failed."""
 
 
+class WorkerCleanupFailed(Blocked):
+    """The supervisor could not confirm that it reaped its worker."""
+
+
 def require(condition, message):
     if not condition:
         raise Blocked(message)
@@ -108,8 +112,11 @@ class OfflineWorker:
                     with suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise WorkerCleanupFailed("offline Blender worker reap not verified") from error
             finally:
-                process.stdout.close()
+                with suppress(OSError):
+                    process.stdout.close()
 
     def run(self, args, operation="version"):
         with self.launch(args) as process:

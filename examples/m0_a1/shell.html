@@ -28,7 +28,7 @@ async function refresh() {
     const state = await response.json();
     job = state.job;
     el("phase").value = state.phase;
-    el("run").disabled = state.status === "running";
+    el("run").disabled = ["running", "cleanup_failed"].includes(state.status);
     el("cancel").disabled = state.status !== "running" ||
       state.phase.startsWith("Cancelling");
     el("svg").disabled = el("depth").disabled = !state.candidate;
