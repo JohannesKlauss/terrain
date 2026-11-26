@@ -290,6 +290,9 @@ uv run ruff format --check .
 
 Use `generate --all` only for the complete mechanical/style regression matrix, not as the default creative workflow.
 
+For the disposable macOS M0-A1 fixture, see the [offline Blender verification
+recipe](examples/m0_a1/README.md). It uses only synthetic inputs and does not run an agent.
+
 ## Prompt an agent
 
 The shared skills live in `.agents/skills/`, discovered by Maki, Pi, and Droid's compatible
