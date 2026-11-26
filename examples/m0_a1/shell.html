@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; connect-src 'self'; frame-src 'self';
+               style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>M0-A1 offline staging shell</title>
+<style>
+body { font: 16px system-ui; margin: 24px; background: #162028; color: #f3f5f6 }
+button { margin-right: 8px }
+iframe { width: 100%; min-height: 540px; border: 0; margin-top: 16px }
+</style>
+<h1>M0-A1 offline staging shell</h1>
+<p>Run a fixed edit on synthetic terrain. No agent, approval or canonical commit.</p>
+<button id="run" disabled>Run fixed Blender edit</button>
+<button id="cancel" disabled>Cancel staging</button>
+<p><output id="phase" aria-live="polite">Connecting to local supervisor</output></p>
+<button id="svg" disabled>SVG comparison</button>
+<button id="depth" disabled>Depth-tested comparison</button>
+<iframe id="comparison" title="Staged candidate comparison" sandbox="allow-scripts" hidden></iframe>
+<script>
+const el = (id) => document.getElementById(id);
+let job;
+let candidate;
+async function refresh() {
+  try {
+    const response = await fetch("/state", {cache: "no-store"});
+    if (!response.ok) throw Error("state unavailable");
+    const state = await response.json();
+    job = state.job;
+    el("phase").value = state.phase;
+    el("run").disabled = state.status === "running";
+    el("cancel").disabled = state.status !== "running" ||
+      state.phase.startsWith("Cancelling");
+    el("svg").disabled = el("depth").disabled = !state.candidate;
+    if (state.candidate && state.candidate !== candidate) {
+      candidate = state.candidate;
+      compare("depth");
+    }
+  } catch {
+    el("phase").value = "Local supervisor unavailable";
+    el("run").disabled = el("cancel").disabled = true;
+  } finally {
+    setTimeout(refresh, 150);
+  }
+}
+async function action(path) {
+  el("run").disabled = el("cancel").disabled = true;
+  try {
+    const result = await fetch(path, {method: "POST", headers: {"X-M0-Action": "fixed-fixture"}});
+    if (!result.ok) el("phase").value = "Stage action refused; refreshing";
+  } catch {
+    el("phase").value = "Local supervisor unavailable";
+  }
+}
+function compare(renderer) {
+  el("comparison").src = `/${renderer}`;
+  el("comparison").hidden = false;
+}
+el("run").onclick = () => action("/run");
+el("cancel").onclick = () => action(`/cancel/${job}`);
+el("svg").onclick = () => compare("svg");
+el("depth").onclick = () => compare("depth");
+refresh();
+</script>

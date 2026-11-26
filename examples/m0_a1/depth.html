@@ -1,0 +1,129 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>M0-A1 depth-buffer probe</title>
+<style>
+body { font: 16px system-ui; margin: 24px; background: #162028; color: #f3f5f6 }
+figure { display: inline-block; width: min(43%, 520px); margin: 0 16px 0 0 }
+canvas { display: block; width: 100%; margin-top: 8px }
+</style>
+<h1>M0-A1 depth-buffer probe</h1>
+<p>Same fixed fixture and cameras as SVG. Click a visible surface to pick its front component.</p>
+<p id="runtime"></p>
+<button id="view" disabled>Switch to top view</button>
+<p><output id="selected">No component selected</output></p>
+<figure><figcaption>Baseline</figcaption><canvas aria-label="Baseline depth view"></canvas></figure>
+<figure><figcaption>Candidate</figcaption><canvas aria-label="Candidate depth view"></canvas></figure>
+<script>
+const [cameras, baseline, candidate] = /* FIXTURE */;
+const canvases = [...document.querySelectorAll("canvas")];
+const status = document.getElementById("selected");
+const view = document.getElementById("view");
+let mode = "oblique";
+let selected = null;
+
+function shader(gl, type, source) {
+  const result = gl.createShader(type);
+  gl.shaderSource(result, source);
+  gl.compileShader(result);
+  if (!gl.getShaderParameter(result, gl.COMPILE_STATUS)) throw Error("Shader unsupported");
+  return result;
+}
+
+function pane(canvas, items) {
+  const gl = canvas.getContext("webgl2", {antialias: false, preserveDrawingBuffer: true});
+  if (!gl) throw Error("WebGL 2 unavailable");
+  const program = gl.createProgram();
+  gl.attachShader(program, shader(gl, gl.VERTEX_SHADER, `#version 300 es
+in vec3 point;
+void main() { gl_Position = vec4(point, 1.0); }`));
+  gl.attachShader(program, shader(gl, gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float;
+uniform vec3 color;
+out vec4 pixel;
+void main() { pixel = vec4(color, 1.0); }`));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error("Program unsupported");
+  gl.useProgram(program);
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.DITHER);
+  const point = gl.getAttribLocation(program, "point");
+  gl.enableVertexAttribArray(point);
+  const color = gl.getUniformLocation(program, "color");
+  const buffers = items.map(() => gl.createBuffer());
+  const versions = gl.getParameter(gl.VERSION);
+
+  function load() {
+    const [left, top, width, height, far, near] = cameras[mode];
+    const scale = Math.min(12, 850 / Math.max(width, height));
+    canvas.width = Math.ceil(width * scale);
+    canvas.height = Math.ceil(height * scale);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    // Same top/oblique projections as SVG. The near depth maps to the smaller Z.
+    const project = ([x, y, z]) => {
+      const [u, v, depth] = mode === "top" ? [x, -y, z] : [x - 0.45*y, -z + 0.4*y, -y];
+      return [2*(u-left)/width-1, 1-2*(v-top)/height, 1-2*(depth-far)/(near-far)];
+    };
+    items.forEach((item, i) => {
+      const vertices = item.vertices.map(project);
+      const triangles = item.triangles.flatMap((face) => face.flatMap((j) => vertices[j]));
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers[i]);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangles), gl.STATIC_DRAW);
+    });
+  }
+
+  function draw(ids = false) {
+    gl.clearColor(...(ids ? [0, 0, 0, 1] : [.145, .204, .25, 1]));
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    items.forEach((item, i) => {
+      const code = i + 1;
+      const tint = ids
+        ? [(code & 255)/255, (code >> 8)/255, 0]
+        : item.id === selected ? [.96, .75, .27]
+        : item.id === "frame" ? [.69, .51, .35] : [.51, .58, .64];
+      gl.uniform3fv(color, tint);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers[i]);
+      gl.vertexAttribPointer(point, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, item.triangles.length * 3);
+    });
+  }
+
+  canvas.addEventListener("click", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((event.clientX - rect.left) / rect.width * canvas.width);
+    const y = canvas.height - 1 - Math.floor((event.clientY - rect.top) / rect.height * canvas.height);
+    if (gl.isContextLost() || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return;
+    draw(true);
+    const pixel = new Uint8Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    selected = items[pixel[0] + (pixel[1] << 8) - 1]?.id ?? null;
+    status.value = selected ? `Selected: ${selected}` : "No component selected";
+    canvases.forEach((node) => { node.dataset.selected = selected ?? ""; });
+    repaint();
+  });
+  canvas.addEventListener("webglcontextlost", () => {
+    status.value = "WebGL context lost; use the SVG comparison for inspection";
+    view.disabled = true;
+  });
+  return {load, draw, versions};
+}
+
+let panes;
+function repaint() { panes.forEach((item) => item.draw()); }
+try {
+  panes = [pane(canvases[0], baseline), pane(canvases[1], candidate)];
+  document.getElementById("runtime").textContent = panes[0].versions;
+  panes.forEach((item) => item.load());
+  repaint();
+  view.disabled = false;
+  view.onclick = () => {
+    mode = mode === "oblique" ? "top" : "oblique";
+    view.textContent = mode === "oblique" ? "Switch to top view" : "Switch to oblique view";
+    panes.forEach((item) => item.load());
+    repaint();
+  };
+} catch (error) {
+  status.value = `${error.message}; use the SVG comparison for inspection`;
+}
+</script>

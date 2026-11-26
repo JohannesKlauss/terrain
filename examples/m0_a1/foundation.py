@@ -1,62 +1,115 @@
 """Disposable renderer and storage probes, not choices for the product."""
 
+import json
 import sqlite3
 from contextlib import closing
 from html import escape
+from pathlib import Path
 
 from offline_worker import require
 
 
-def storage_probe(control, baseline_sha):
-    """Compare interrupted writes and writer semantics using the real baseline digest."""
+def storage_probe(control, baseline_sha, candidate_sha):
+    """Exercise two requests based on the same accepted, real Blender artifact."""
+    require(baseline_sha != candidate_sha, "revision artifacts must differ")
     accepted = control / "accepted-rev"
     pending = accepted.with_suffix(".pending")
     accepted.write_text(baseline_sha, encoding="ascii")
-    pending.write_text("candidate", encoding="ascii")
-    require(accepted.read_text() == baseline_sha, "pending file displaced accepted state")
-    pending.replace(accepted)
-    require(accepted.read_text() == "candidate", "atomic replacement not visible")
 
-    with (
-        closing(sqlite3.connect(control / "probe.db", timeout=0)) as writer,
-        closing(sqlite3.connect(control / "probe.db", timeout=0)) as reader,
-    ):
+    def file_write(base, proposed, interrupted=False):
+        # Exclusive app-owned parent and one writer only; not a cross-process CAS.
+        if accepted.read_text() != base:
+            return False
+        pending.write_text(proposed, encoding="ascii")
+        if not interrupted:
+            pending.replace(accepted)
+        return True
+
+    file_requests = [(accepted.read_text(), candidate_sha) for _ in range(2)]
+    require(file_write(*file_requests[0]), "current file revision not accepted")
+    reopened_file = accepted.read_text()
+    require(reopened_file == candidate_sha, "file reopen lost the accepted digest")
+    require(not file_write(*file_requests[1]), "previously valid file revision still accepted")
+    require(file_write(candidate_sha, baseline_sha, interrupted=True), "file interrupt setup")
+    require(
+        pending.read_text() == baseline_sha and accepted.read_text() == candidate_sha,
+        "interrupted file staging displaced accepted state",
+    )
+
+    db = control / "probe.db"
+
+    def connect():
+        return closing(sqlite3.connect(db, timeout=0))
+
+    def stored(connection):
+        return connection.execute("SELECT id FROM revision").fetchone()[0]
+
+    def update(connection, base, proposed):
+        return (
+            connection.execute("UPDATE revision SET id=? WHERE id=?", (proposed, base)).rowcount
+            == 1
+        )
+
+    with connect() as writer, connect() as reader:
         writer.execute("CREATE TABLE revision (id TEXT NOT NULL)")
         writer.execute("INSERT INTO revision VALUES (?)", (baseline_sha,))
         writer.commit()
+        request1, request2 = (stored(writer), candidate_sha), (stored(reader), candidate_sha)
         writer.execute("BEGIN IMMEDIATE")
-        changed = writer.execute("UPDATE revision SET id=? WHERE id=?", ("candidate", baseline_sha))
-        require(changed.rowcount == 1, "current writer did not stage its row")
-        require(
-            reader.execute("SELECT id FROM revision").fetchone() == (baseline_sha,),
-            "uncommitted database update visible",
-        )
+        require(update(writer, *request1), "current writer did not stage its row")
+        require(stored(reader) == baseline_sha, "uncommitted database update visible")
         try:
             reader.execute("BEGIN IMMEDIATE")
         except sqlite3.OperationalError as error:
             require(error.sqlite_errorcode == sqlite3.SQLITE_BUSY, "unexpected database error")
         else:
             raise RuntimeError("a second database writer was not fenced")
-        writer.rollback()
-        require(
-            reader.execute("SELECT id FROM revision").fetchone() == (baseline_sha,),
-            "database rollback lost the baseline",
-        )
-        stale = writer.execute("UPDATE revision SET id=? WHERE id=?", ("wrong", "stale"))
-        require(stale.rowcount == 0, "stale database update was not rejected")
+        writer.commit()
+    with connect() as reopened:
+        reopened_sqlite = stored(reopened)
+        require(reopened_sqlite == candidate_sha, "SQLite reopen lost the accepted digest")
+        require(not update(reopened, *request2), "previously valid SQLite revision still accepted")
+        require(update(reopened, candidate_sha, baseline_sha), "SQLite interrupt setup")
+        # Closing without committing discards the interrupted candidate.
+    with connect() as recovered:
+        require(stored(recovered) == candidate_sha, "interrupted SQLite write changed revision")
     return {
         "sqlite_version": sqlite3.sqlite_version,
-        "atomic_file": "staging preserves accepted bytes before replace; no writer fencing tested",
-        "sqlite": "exclusive write reservation, old value visible, rollback, stale predicate",
+        "request_base": baseline_sha,
+        "atomic_file": {
+            "reopened": reopened_file,
+            "stale_rejected": True,
+            "after_interruption": accepted.read_text(),
+            "cross_process_writer_fencing": False,
+        },
+        "sqlite": {
+            "reopened": reopened_sqlite,
+            "stale_rejected": True,
+            "after_interruption": candidate_sha,
+            "second_writer_blocked": True,
+        },
     }
+
+
+def projection(vertex, mode):
+    x, y, z = vertex
+    return (x, -y, z) if mode == "top" else (x - y * 0.45, -z + y * 0.4, -y)
+
+
+def camera(baseline, candidate, mode):
+    points = [
+        projection(vertex, mode)
+        for snapshot in (baseline, candidate)
+        for obj in snapshot.values()
+        for vertex in obj["vertices"]
+    ]
+    xs, ys, depths = zip(*points, strict=True)
+    left, top, far = min(xs), min(ys), min(depths)
+    return [left - 3, top - 3, max(xs) - left + 6, max(ys) - top + 6, far - 1, max(depths) + 1]
 
 
 def viewer(path, baseline, candidate):
     """Make two local SVG comparisons with shared extents and an explicit frame highlight."""
-
-    def projection(vertex, mode):
-        x, y, z = vertex
-        return (x, -y, z) if mode == "top" else (x - y * 0.45, -z + y * 0.4, -y)
 
     def compare(mode):
         def scene(items):
@@ -72,15 +125,7 @@ def viewer(path, baseline, candidate):
                     )
             return "".join(polygon for _, polygon in sorted(triangles))
 
-        points = [
-            projection(vertex, mode)
-            for snapshot in (baseline, candidate)
-            for obj in snapshot.values()
-            for vertex in obj["vertices"]
-        ]
-        xs, ys, _ = zip(*points, strict=True)
-        left, top = min(xs), min(ys)
-        view = f"{left - 3:g} {top - 3:g} {max(xs) - left + 6:g} {max(ys) - top + 6:g}"
+        view = " ".join(f"{value:g}" for value in camera(baseline, candidate, mode)[:4])
         return (
             f'<section class="pair" id="{mode}"{" hidden" if mode == "top" else ""}>'
             + "".join(
@@ -132,4 +177,14 @@ document.getElementById("view").onclick = (event) => {
 </script>
 """,
         encoding="utf-8",
+    )
+
+
+def depth_viewer(path, baseline, candidate):
+    """Use the same projection and extents as SVG, with a WebGL depth buffer."""
+    views = {mode: camera(baseline, candidate, mode) for mode in ("oblique", "top")}
+    data = json.dumps([views, list(baseline.values()), list(candidate.values())])
+    template = (Path(__file__).resolve().parent / "depth.html").read_text(encoding="utf-8")
+    path.write_text(
+        template.replace("/* FIXTURE */", data.replace("<", "\\u003c")), encoding="utf-8"
     )

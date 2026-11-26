@@ -3,7 +3,7 @@
 This is a disposable engineering probe for [M0-A1](https://github.com/JohannesKlauss/terrain/issues/20).
 The app goal is to go from rough 2D layout to finished terrain with existing assets
 and new originals. This probe tests whether one original can change in scene context
-without moving its neighbors or changing its fit. The CLI and comparison page do
+without moving its neighbors or changing its fit. The offline staging shell does
 not prove the later integrated app workflow, and the fixed edit is not an agent response.
 
 ## Bootstrap and verify
@@ -11,8 +11,10 @@ not prove the later integrated app workflow, and the fixed edit is not an agent 
 Use a fresh checkout from the remote outside any private terrain workspace. Do not
 mount or copy a local catalog, purchased meshes, project data, credentials or external
 scripts. The verifier accepts no model, script or provider input. It creates and removes
-a temporary workspace, or copies only its checked synthetic artifacts to a new directory
-when `--output` is supplied. Keep generated evidence out of Git.
+a temporary workspace, or copies its checked synthetic artifacts to a new directory
+when `--output` is supplied. Use an exclusive output parent you just created. The
+CLI's final rename is not a concurrent no-replace operation. Keep evidence out
+of Git. The shell creates an exclusive temporary parent for each job automatically.
 
 Tested with macOS 26.0.1 arm64, CPython 3.11.7, uv 0.11.9, Blender 5.3.0 in
 `/Applications/Blender.app`, and the system `sandbox-exec`. The full repository
@@ -27,18 +29,34 @@ uv run --no-sync python examples/m0_a1/verify.py
 uv run --no-sync pytest -q tests/test_m0_a1.py
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
-# Optional larger fixture and local inspection; the output directory must not exist.
-mkdir -p build
-uv run --no-sync python examples/m0_a1/verify.py --grid 16 --output build/m0-a1
+# Optional larger fixture and local inspection in exclusive scratch.
+scratch="$(mktemp -d)"
+uv run --no-sync python examples/m0_a1/verify.py --grid 16 --output "$scratch/m0-a1"
 # Full regression suite includes trusted existing Blender and OpenSCAD tests.
 uv run --no-sync pytest -q
 ```
 
-Open `build/m0-a1/compare.html` locally to see matched oblique and top views.
+Open `m0-a1/compare.html` in the scratch parent to see matched oblique and top views.
 **Highlight frame** marks its stable ID in both revisions. Geometry clicks do not
-select components: SVG triangle sorting does not depth-test occlusion. The default
-grid is better for close inspection. To retain that run, omit `--grid 16` and use
-a different new output directory.
+select components in SVG. Open `m0-a1/depth.html` for the same views with WebGL 2
+depth-tested selection. At oblique projection coordinates $(u,v)=(12,-5)$, the
+protected front block occludes the frame. The upper rail at $(0,-19)$ is still
+selectable. Both renderers use the same bounds. The default grid is better for
+close inspection; to retain that run, omit `--grid 16` and use a new output.
+
+## Run and cancel in the local shell
+
+```bash
+uv run --no-sync python examples/m0_a1/app.py
+```
+
+Open the printed `127.0.0.1` URL in a local browser. Choose **Run fixed Blender
+edit** to run the trusted synthetic operation, observe progress, and open the
+paired comparators once the candidate is staged. Start another run and use **Cancel
+staging** while it is active; the previous preview remains available. Stop the
+shell with Ctrl+C. No provider, file upload, arbitrary Python, approval, or commit
+route is present. This shell listens only on loopback and validates mutation origin,
+intent header and request shape. It does not authenticate local processes.
 
 ## Fixture and checks
 
@@ -75,9 +93,9 @@ a different new output directory.
 
 | Boundary | What this probe tests | What it does not establish |
 | --- | --- | --- |
-| Launch/shell | A local Python supervisor launches fixed headless Blender operations, captures results, and kills/reaps a ready worker. The browser opens an offline evidence file with no worker controls. | No desktop shell, app-owned consent or worker supervision from the UI. No browser-only substitute for the process boundary. |
-| Renderer | An SVG projection of evaluated meshes tests stable component IDs, shared camera extents and an explicit linked frame highlight. The existing `src/terrain/review.py` WebGL inspector is another baseline for orbit and full scene inspection, not tested by this fixture. | SVG geometry picking is disabled because occlusion is not depth-tested. No GPU renderer comparison, production renderer choice, or performance claim. |
-| Storage | A staged file remains invisible until atomic replacement, but the file probe does not fence another writer. SQLite tests a blocked second writer, rollback and rejection of a mismatched placeholder revision. | No formerly accepted request becoming stale, no accepted-revision reopen, and no product store choice, power-loss durability claim or app-owned approval API. The Blender worker sees no such API; the tested result is denial of synthetic filesystem writes. |
+| Launch/shell | CLI runs and reports the same trusted operation. The disposable browser shell owns the supervisor and exposes progress, scoped cancellation and a staged preview. Candidates cannot be accepted from the shell. | No packaged desktop shell, real app consent/approval, or agent-tool protocol. Browser isolation is not the worker boundary. |
+| Renderer | SVG shows two matched views and a linked frame highlight, with geometry picking disabled. The WebGL 2 alternative uses the same meshes and cameras but resolves picking at overlap with a depth buffer. | No general 3D editor, orbit workflow, production renderer choice or performance claim. If WebGL is unavailable, SVG is inspection-only. |
+| Storage | Separate CLI-only probes use the real baseline and candidate `.blend` digests. Two requests start from the same accepted digest; one commits, both stores reopen on that digest, reject the pending stale request, and preserve the digest after interruption. SQLite additionally fences a competing writer; the file alternative assumes one exclusive writer. | No production persistence, power-loss durability, production store choice or approval API. The shell never runs the commit probe. |
 | Isolation | Kernel-enforced checks on this installed macOS version. The viewer and host validation are not inside the worker profile. | Not a sandbox for an agent, arbitrary generated Python, unknown `.blend` files, or other hosts. OS metadata and required runtime reads remain visible. The Apple-private `dyld-support.sb` bootstrap can change after OS updates; rerun controls and stop on failure. No unsandboxed Blender fallback. |
 
 Keep live provider transport, agent tools, arbitrary generated Blender scripts and any

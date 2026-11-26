@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 import trimesh
-from foundation import storage_probe, viewer
+from foundation import depth_viewer, storage_probe, viewer
 from offline_worker import POLICY, Blocked, OfflineWorker, require
 from PIL import Image, ImageDraw
 
@@ -113,13 +113,15 @@ def check_export(path, height):
     return mesh.bounds.tolist()
 
 
-def verify(root, grid, output, check_cancelled):
+def verify(root, grid, output, check_cancelled, progress=lambda phase: None, *, probe_storage=True):
+    progress("Preparing fixed fixture")
     inputs, stage, control = [root / name for name in ("inputs", "stage", "control")]
     for path in (inputs, stage, control):
         path.mkdir(mode=0o700)
     for name in ("blender_fixture.py", "worker_canary.py"):
         shutil.copyfile(HERE / name, inputs / name)
     worker = OfflineWorker(inputs, stage, check_cancelled)
+    progress("Checking offline worker boundary")
     version = worker.run(["--version"]).splitlines()[0]
     require(version.startswith("Blender "), "Blender version not reported")
     controls = worker.controls(control)
@@ -130,6 +132,7 @@ def verify(root, grid, output, check_cancelled):
     ref, prompt = inputs / "reference.png", inputs / "prompt.txt"
     write_reference(ref)
     prompt.write_text(PROMPT, encoding="utf-8")
+    progress("Creating and sealing baseline")
     worker.fixture("create", str(grid))
     made = stage / "baseline.blend"
     digest(made)
@@ -163,11 +166,12 @@ def verify(root, grid, output, check_cancelled):
     sealed = (accepted, a, stl_a, scope_path)
     sealed_digests = tuple(digest(path) for path in sealed)
 
+    progress("Staging fixed Blender edit")
     ran = worker.fixture("stage", str(inputs), project=accepted)
     require("M0_BASELINE_REWRITE_DENIED" in ran.splitlines(), "sealed rewrite control missing")
     candidate = stage / "candidate.blend"
-    digest(candidate)
     worker.fixture("inspect", "candidate", project=candidate)
+    progress("Validating candidate and scope")
     require(tuple(digest(path) for path in sealed) == sealed_digests, "sealed baseline changed")
     require([digest(path) for path in canonical] == control_digests, "canonical state changed")
     b, stl_b = [stage / name for name in ("candidate.json", "candidate-frame.stl")]
@@ -177,7 +181,10 @@ def verify(root, grid, output, check_cancelled):
     bounds["candidate"] = check_export(stl_b, 23)
     view = stage / "compare.html"
     viewer(view, baseline, revised)
-    files = [*sealed, candidate, ref, prompt, b, stl_b, view]
+    depth = stage / "depth.html"
+    depth_viewer(depth, baseline, revised)
+    files = [*sealed, candidate, ref, prompt, b, stl_b, view, depth]
+    hashes = {path.name: digest(path) for path in files}
     manifest = {
         "fixture": "m0-a1-frame-v1",
         "provenance": "Original generated fixture geometry, reference and prompt; no asset inputs",
@@ -185,13 +192,16 @@ def verify(root, grid, output, check_cancelled):
         "profile": {"grid": grid, "assets": assets, "instances": instances, "triangles": triangles},
         "toolchain": {"blender": version, "macos": platform.mac_ver()[0]},
         "policy_sha256": hashlib.sha256(POLICY.encode()).hexdigest(),
-        "artifact_sha256": {path.name: digest(path) for path in files},
+        "artifact_sha256": hashes,
         "stl_bounds_mm": bounds,
         "offline_controls": controls,
         "sealed_baseline_rewrite_denied": True,
         "cancelled_and_reaped": True,
-        "storage_probe": storage_probe(control, sealed_digests[0]),
     }
+    if probe_storage:
+        manifest["storage_probe"] = storage_probe(
+            control, sealed_digests[0], hashes["candidate.blend"]
+        )
     check_cancelled()
     if output is not None:
         with tempfile.TemporaryDirectory(prefix=".m0-evidence-", dir=output.parent) as path:
@@ -211,7 +221,10 @@ def verify(root, grid, output, check_cancelled):
     print(f"PASS {version}; allowed fixture reads and candidate writes; eight blocked operations")
     print("PASS Blender cancelled and reaped; accepted/canonical/approval bytes unchanged")
     print("PASS real STL in millimetres, protected geometry, and three rejected scope controls")
-    print(f"PASS {assets} assets, {instances} instances, {triangles} triangles; storage probes")
+    print(
+        f"PASS {assets} assets, {instances} instances, {triangles} triangles"
+        + ("; storage probes" if probe_storage else "")
+    )
     return manifest
 
 

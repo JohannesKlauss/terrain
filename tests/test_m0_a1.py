@@ -6,8 +6,10 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from contextlib import suppress
+from http.client import HTTPConnection
 from pathlib import Path
 
 import pytest
@@ -100,6 +102,15 @@ def test_real_m0_offline_scope_and_reproducibility(tmp_path, monkeypatch):
         }
         assert manifest["cancelled_and_reaped"]
         assert manifest["sealed_baseline_rewrite_denied"]
+        storage = manifest["storage_probe"]
+        hashes = manifest["artifact_sha256"]
+        assert storage["request_base"] == hashes["baseline.blend"]
+        for backend in ("atomic_file", "sqlite"):
+            assert storage[backend]["reopened"] == hashes["candidate.blend"]
+            assert storage[backend]["after_interruption"] == hashes["candidate.blend"]
+            assert storage[backend]["stale_rejected"]
+        assert not storage["atomic_file"]["cross_process_writer_fencing"]
+        assert storage["sqlite"]["second_writer_blocked"]
         scope = json.loads((output / "scope.json").read_text())
         assert scope and all(manifest[key] == value for key, value in scope.items())
         viewer = (output / "compare.html").read_text()
@@ -232,3 +243,84 @@ raise SystemExit(verify.main())
                 os.killpg(worker_pid, signal.SIGKILL)
         process.stdout.close()
         process.stderr.close()
+
+
+@needs_blender
+def test_app_stages_real_candidate_and_preserves_it_on_cancel(monkeypatch):
+    monkeypatch.syspath_prepend(str(VERIFIER.parent))
+    from app import Shell, Stager
+
+    stager = Stager()
+    with Shell(stager) as shell:
+        thread = threading.Thread(target=shell.serve_forever)
+        thread.start()
+        try:
+            headers = {"Origin": f"http://{shell.host}", "X-M0-Action": "fixed-fixture"}
+
+            def request(method, path, request_headers=None, body=None):
+                connection = HTTPConnection(shell.host, timeout=3)
+                try:
+                    connection.request(method, path, headers=request_headers or {}, body=body)
+                    reply = connection.getresponse()
+                    return reply.status, reply.read()
+                finally:
+                    connection.close()
+
+            def state():
+                status_code, body = request("GET", "/state")
+                assert status_code == 200
+                return json.loads(body)
+
+            def wait(status):
+                deadline = time.monotonic() + 25
+                while time.monotonic() < deadline:
+                    current = state()
+                    if current["status"] == status:
+                        return current
+                    assert current["status"] != "blocked", current
+                    time.sleep(0.025)
+                pytest.fail(f"missing {status}: {state()}")
+
+            assert request("GET", "/", {"Host": "not-loopback.invalid"})[0] == 403
+            assert request("POST", "/run")[0] == 403
+            assert request("POST", "/run", headers, body=b"external input")[0] == 403
+            for path in ("/accept", "/commit", "/approve", "/stage?script=other.py"):
+                assert request("POST", path, headers)[0] == 404
+            assert request("GET", "/depth")[0] == 404
+            assert request("POST", "/run", headers)[0] == 202
+            assert wait("running")["phase"] != "Ready to stage the fixed edit"
+            assert request("POST", "/run", headers)[0] == 409
+            assert request("POST", "/cancel/0", headers)[0] == 409
+            completed = wait("staged")
+            assert len(completed["candidate"]) == 64
+            assert b"depth-buffer probe" in request("GET", "/depth")[1]
+            assert b"Geometry picking is disabled" in request("GET", "/svg")[1]
+            assert request("POST", "/run", headers)[0] == 202
+            assert request("POST", "/cancel/1", headers)[0] == 409
+            assert request("POST", "/cancel/2", headers)[0] == 202
+            cancelled = wait("cancelled")
+            assert cancelled["candidate"] == completed["candidate"]
+        finally:
+            shell.shutdown()
+            thread.join(timeout=5)
+            stager.close()
+
+
+def test_app_worker_failure_stops_without_candidate(monkeypatch):
+    monkeypatch.syspath_prepend(str(VERIFIER.parent))
+    from app import Stager
+    from offline_worker import Blocked
+
+    def blocked(*args, **kwargs):
+        raise Blocked("known synthetic failure")
+
+    stager = Stager(blocked)
+    try:
+        assert stager.start()
+        stager.thread.join(timeout=5)
+        assert stager.state()["status"] == "blocked"
+        assert stager.state()["candidate"] is None
+        assert stager.view("/depth") is None
+    finally:
+        stager.close()
+    assert not stager.start()

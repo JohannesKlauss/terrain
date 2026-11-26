@@ -60,7 +60,9 @@ def create(grid):
     block = box("block", 9, 9, 6)
     for x in range(grid):
         for y in range(grid):
-            add_asset(f"context.block-{x:02}-{y:02}", "block", block, (22 + x * 14, y * 14, 3))
+            # One protected neighbor overlaps in projection but clears the frame physically.
+            location = (12, -7, 3) if (x, y) == (0, 0) else (22 + x * 14, y * 14, 3)
+            add_asset(f"context.block-{x:02}-{y:02}", "block", block, location)
     bpy.ops.wm.save_as_mainfile(filepath=str(Path("baseline.blend").resolve()))
 
 
