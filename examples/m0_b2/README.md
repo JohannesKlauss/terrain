@@ -33,7 +33,8 @@ protocol sources listed in the [B1 audit](../../docs/m0-agent-integration-audit.
 they were not revalidated against the binary in this slice.
 
 - Responses are correlated by request ID. Unmatched or duplicate responses,
-  invalid JSON and lines over 64 KiB are recorded as violations and ignored.
+  replies that arrive after their request timed out, invalid JSON and lines
+  over 64 KiB are recorded as violations and ignored.
 - One fixed named tool, `stage_frame({component_id, base_revision})`. The host
   refuses calls for another thread, a non-active or interrupted turn, another
   tool name, extra or missing fields, a component other than `frame` and any
@@ -45,8 +46,10 @@ they were not revalidated against the binary in this slice.
   worker's process group, and fails unless the group is confirmed gone.
 - `recover()` reaps the old worker, reconnects and calls `thread/resume`. The
   resumed thread must contain the last turn the host journaled as completed.
-  Otherwise it reaps the new worker and raises `RecoveryFailed` without starting
-  a turn. Accepted state is app-owned and never changed by the worker.
+  If the new worker exits or times out, the resume reply is an error or
+  malformed, or the journal does not match, it reaps the new worker and raises
+  `RecoveryFailed` without starting a turn. Accepted state is app-owned and
+  never changed by the worker.
 
 The worker is always `synthetic_app_server.py`, launched with `python -I`, a
 minimal environment and its own scratch state directory. The entry point takes

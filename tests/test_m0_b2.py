@@ -93,3 +93,56 @@ def test_reader_flags_oversized_and_invalid_lines(b2):
         {"_violation": "not_object"},
     ]
     assert messages[3] is native_host.EOF_MARK
+
+
+def test_recovery_reaps_a_worker_that_dies_at_startup(b2, tmp_path):
+    native_host, run = b2
+    session = native_host.NativeHost(run.ACCEPTED, tmp_path)
+    try:
+        session.connect()
+        session.start_thread()
+        known, _ = session.run_turn("plain")
+        (tmp_path / "threads.json").write_text("not json")
+        with pytest.raises(native_host.RecoveryFailed):
+            session.recover(known)
+        assert session.process is None
+        assert [reap["how"] for reap in session.reaps] == ["exited", "exited"]
+        assert session.reaps[1]["returncode"] != 0
+        assert not session.staged
+        assert session.accepted == run.ACCEPTED
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("turns", ["not-a-list", [{"id": "turn-1"}], [7]])
+def test_recovery_rejects_a_malformed_resume_result(b2, tmp_path, turns):
+    native_host, run = b2
+    session = native_host.NativeHost(run.ACCEPTED, tmp_path)
+    try:
+        session.connect()
+        session.start_thread()
+        known, _ = session.run_turn("plain")
+        (tmp_path / "threads.json").write_text(json.dumps({session.thread_id: {"turns": turns}}))
+        with pytest.raises(native_host.RecoveryFailed):
+            session.recover(known)
+        assert session.process is None
+        assert [reap["how"] for reap in session.reaps] == ["exited", "exited"]
+        assert session.server_requests == []
+        assert session.accepted == run.ACCEPTED
+    finally:
+        session.close()
+
+
+def test_late_response_after_timeout_is_flagged(b2, tmp_path):
+    native_host, run = b2
+    session = native_host.NativeHost(run.ACCEPTED, tmp_path)
+    try:
+        session.connect()
+        with pytest.raises(native_host.ProtocolError, match="timed out"):
+            session.request("x/slow", {}, timeout=0)
+        assert session.pending == {}
+        session.start_thread()
+        assert session.violations == [{"kind": "unmatched_response", "id": 2}]
+        assert session.responses == {}
+    finally:
+        session.close()

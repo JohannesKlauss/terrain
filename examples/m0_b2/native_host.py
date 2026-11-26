@@ -125,7 +125,12 @@ class NativeHost:
         request_id = next(self.ids)
         self.pending[request_id] = method
         self._send({"id": request_id, "method": method, "params": params})
-        self._pump(lambda: request_id in self.responses, timeout, method)
+        try:
+            self._pump(lambda: request_id in self.responses, timeout, method)
+        except ProtocolError:
+            # A reply that arrives after we gave up must be flagged, not silently accepted.
+            self.pending.pop(request_id, None)
+            raise
         response = self.responses.pop(request_id)
         if "error" in response:
             raise ProtocolError(f"{method} error {response['error'].get('code')}")
@@ -284,14 +289,14 @@ class NativeHost:
         """Reopen the same thread natively; otherwise fail without starting new work."""
         thread_id = self.thread_id
         self.close()
-        self.connect(timeout)
-        self.thread_id = thread_id
         try:
+            self.connect(timeout)
+            self.thread_id = thread_id
             thread = self.request("thread/resume", {"threadId": thread_id}, timeout)["thread"]
             turns = {turn["id"]: turn["status"] for turn in thread.get("turns", [])}
             if thread.get("id") != thread_id or turns.get(last_completed_turn) != "completed":
                 raise ProtocolError("resumed thread does not match app-owned journal")
-        except ProtocolError as error:
+        except (ProtocolError, OSError, KeyError, TypeError, AttributeError) as error:
             self.close()
-            raise RecoveryFailed(str(error)) from error
+            raise RecoveryFailed(str(error) or type(error).__name__) from error
         return thread_id
